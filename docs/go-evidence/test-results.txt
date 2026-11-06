@@ -1,0 +1,42 @@
+Verified 2026-11-06 in the managed Linux environment.
+Baseline: c1aa579de8bf726a31cbabbaddfe1cb4fd52e4b0
+
+Go 1.25.4 linux/amd64:
+  go test -race -cover ./...
+  PASS: 11 top-level tests; 82.3% statement coverage; no race reports.
+  go vet ./...
+  PASS.
+  gofmt / git diff --check
+  PASS.
+
+Elixir 1.19.4 / Erlang OTP 28.3, ERL_FLAGS='+S 2:2':
+  make all
+  PASS: setup, build, format, specs.check, Credo, coverage, Dialyzer.
+  Full suite: 310 tests, 0 failures, 6 skipped.
+  Configured coverage total: 100.00% (repository excludes selected modules).
+  Dialyzer: 0 errors, 0 skipped.
+  Live provider tests remained skipped; no live credentials or accounts connected.
+
+Shared contract:
+  python3 bench/contract.py
+  Go: PASS.
+  Elixir: PASS.
+  Auth, capabilities, approval, hold, duplicate-key replay/conflict, stale revision,
+  capacity, stop, retry lineage, simulation evidence, events, existing CLI.
+
+Browser:
+  Chromium 156.0.8078.79 / Playwright 1.62.1
+  node bench/ui-check.cjs
+  PASS: connect, preview, start, stop/hold, release, retry, success, phone width.
+  No page errors; four actual screenshots are adjacent to this file.
+
+Boundary:
+  No real Codex child, GitLab live API, Google Calendar/Tasks, production deployment,
+  persistent remote hosting, browser resource benchmark, or full Go orchestrator tested.
+
+Packaging:
+  docker build -f bench/compare.Dockerfile --secret id=proxy_ca,src=<CA bundle> ...
+  PASS.
+  docker run --rm <built image> --trials 1 --idle 1 --output /tmp/comparison-smoke.json
+  PASS: both Go and Elixir phases plus CLI completed.
+  This packaging smoke run is separate from bench/comparison.json's three-trial data.

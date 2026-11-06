@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Symphony Go fixture</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 1rem;
+      background: #101827;
+      color: #e8eef8;
+    }
+    button,
+    input {
+      font: inherit;
+      padding: 0.6rem;
+      margin: 0.3rem;
+      border-radius: 0.4rem;
+    }
+    article {
+      border: 1px solid #51617a;
+      padding: 1rem;
+      margin: 1rem 0;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    small {
+      color: #a6bad2;
+    }
+  </style>
+  <h1>Symphony task queue · Go</h1>
+  <p>Demo fixtures · simulated agents · manual dispatch · concurrency one</p>
+  <p>Production release unverified. Resume is unsupported.</p>
+  <form id="login">
+    <label
+      >Demo token
+      <input
+        id="token"
+        type="password"
+        autocomplete="off"
+        required
+        minlength="32" /></label
+    ><button>Connect</button>
+  </form>
+  <small>Token stays in this page’s memory. Refresh disconnects.</small>
+  <p role="alert" id="error"></p>
+  <main id="app"></main>
+  <script>
+    let token = "",
+      snapshot = null,
+      approval = null,
+      busy = false;
+    const app = document.querySelector("#app"),
+      error = document.querySelector("#error");
+    async function api(view, payload) {
+      const r = await fetch("/api/v1/control/" + view, {
+        method: payload ? "POST" : "GET",
+        headers: {
+          Authorization: "Bearer " + token,
+          "Content-Type": "application/json",
+        },
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
+      const text = await r.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw Error(text);
+      }
+      if (!r.ok) throw Error(data.error?.code || text);
+      return data;
+    }
+    function el(tag, text, parent = app) {
+      const e = document.createElement(tag);
+      e.textContent = text;
+      parent.append(e);
+      return e;
+    }
+    function button(label, op, id, parent = app) {
+      const b = el("button", label, parent);
+      b.disabled = busy;
+      b.onclick = () => command(op, id);
+    }
+    async function refresh() {
+      snapshot = await api("snapshot");
+      render();
+    }
+    function render() {
+      app.replaceChildren();
+      const t = snapshot.task;
+      el("h2", t.title);
+      el(
+        "p",
+        `Project ${t.project} · status ${t.status} · revision ${t.revision} · hold ${t.hold}`,
+      );
+      for (const op of t.allowed_actions) button(op, op);
+      button("Sync fixture", "sync");
+      if (approval) {
+        el(
+          "p",
+          "Preview approved for fixture only; expires after two minutes.",
+        );
+        if (!snapshot.runs.length)
+          button("Approve and start simulation", "start");
+      }
+      for (const r of snapshot.runs) {
+        const a = el("article", "");
+        el("h3", `Run ${r.id}`, a);
+        el(
+          "p",
+          `${r.state} · attempt ${r.attempt} · parent ${r.parent_id || "none"}`,
+          a,
+        );
+        if (["starting", "running"].includes(r.state))
+          button("Stop and hold", "stop", r.id, a);
+        else if (approval && r.state !== "stopping")
+          button("Approve new retry", "retry", r.id, a);
+        el("pre", JSON.stringify(r.evidence, null, 2), a);
+      }
+      el("h2", "Durable history and simulation logs");
+      for (const e of snapshot.events) el("pre", JSON.stringify(e));
+    }
+    async function command(op, run_id) {
+      if (busy) return;
+      busy = true;
+      render();
+      try {
+        const r = await api("commands", {
+          op,
+          task_id: "fixture-1",
+          run_id: run_id || null,
+          revision: snapshot.task.revision,
+          key: crypto.randomUUID(),
+          approval,
+        });
+        if (op === "preview") approval = r.id;
+        else if (["start", "retry"].includes(op)) approval = null;
+        error.textContent = "";
+        await refresh();
+      } catch (e) {
+        error.textContent = e.message;
+      } finally {
+        busy = false;
+        if (snapshot) render();
+      }
+    }
+    document.querySelector("#login").onsubmit = async (e) => {
+      e.preventDefault();
+      token = document.querySelector("#token").value;
+      document.querySelector("#token").value = "";
+      try {
+        await refresh();
+        error.textContent = "";
+      } catch (e) {
+        error.textContent = e.message;
+      }
+    };
+    setInterval(() => {
+      if (token && !busy)
+        refresh().catch((e) => (error.textContent = e.message));
+    }, 1000);
+  </script>
+</html>
