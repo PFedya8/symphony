@@ -56,12 +56,18 @@ Read the current revision before any mutation. Example for a fresh database:
 ```sh
 cli/symphonyctl tasks start fixture-1 --dry-run --revision 1
 # Copy the returned approval id in place of PREVIEW_ID:
-cli/symphonyctl tasks start fixture-1 --revision 1 --approval PREVIEW_ID
+cli/symphonyctl tasks start fixture-1 --revision 1 --approval PREVIEW_ID --key start-fixture-1-attempt-1
 ```
 
 The UI and CLI share the same service and SQLite store. Each command has an
-idempotency key; a repeated identical command returns its original result.
-A stale revision or changed request under the same key is rejected. Approvals
+idempotency key. **The CLI generates a fresh UUID on every invocation unless you
+supply `--key`.** To repeat a request after an uncertain response, rerun the exact
+command above with the same explicit key, approval, revision and arguments.
+That returns its original result without dispatching another run. Do not refresh
+the revision or approval for that replay; changing arguments under the same key
+causes an idempotency conflict. A new intentional attempt uses `runs retry`, a
+fresh preview/current revision, and a new key. A stale revision under a new key
+is rejected. Approvals
 are revision-bound and expire after two minutes. Browser Basic Auth is rejected
 for API mutations; the CLI uses a bearer token.
 
@@ -200,6 +206,7 @@ existing Chromium binary. The script rejects non-loopback targets and a database
 with existing runs, but it does mutate the fresh fixture it is given. Screenshots
 contain synthetic approval/run IDs and events, never the authentication token.
 
-Observed UI limitation: after a state change, an old preview can remain visible
-until a fresh preview replaces it. The backend still rejects stale approvals.
-Always obtain a fresh preview after releasing hold or changing revision.
+Previews and approval controls are cleared when the task revision changes,
+including changes from another client, or when the preview expires. Obtain a
+fresh preview after releasing hold. History and simulation evidence are collapsed
+behind expandable summaries so raw JSON does not overwhelm the mobile page.

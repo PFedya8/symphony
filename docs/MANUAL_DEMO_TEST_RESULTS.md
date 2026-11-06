@@ -33,8 +33,10 @@ databases. The browser sequence used a separate disposable database and generate
 
 ## Findings and limits
 
-- The UI can retain a stale preview after a revision change; the service rejects
-  stale approval use. Obtain a new preview after releasing hold.
+- Follow-up review fixed stale preview controls: revision changes and expiry clear
+  them. History/evidence JSON is now collapsed behind expandable summaries.
+- CLI replay guidance now explicitly uses `--key`; process-level checks verify
+  two calls with one explicit key create one event, while default keys create two.
 - Hex reported security advisories in existing locked dependencies. This PR does
   not update them or claim remote security readiness.
 - No phone-accessible live URL was produced. The environment has no configured
@@ -46,5 +48,25 @@ databases. The browser sequence used a separate disposable database and generate
 - The second instance proves port/database/token isolation for the same synthetic
   fixture, not real multi-project tenancy or tracker dispatch.
 - Arbitrary execution, production deployments, external integration writes,
-  expired-approval timing, resource/load benchmarks and macOS packaging are not
+  full two-minute wall-clock expiry timing, resource/load benchmarks and macOS packaging are not
   verified here. The separate Go task owns comparative resource benchmarking.
+
+## Independent-review follow-up
+
+The CLI help/source confirms that omitted `--key` uses a new UUID per invocation.
+The corrected guide keeps an explicit key and all original arguments for an
+uncertain-response replay, and distinguishes that from an intentional new retry.
+The real CLI smoke check asserts one sync audit event for two identical explicit-key
+calls and two events when the key is omitted. Counting only sync events avoids
+races with independent worker lifecycle events.
+
+LiveView checks now assert that start consumes its approval, stop/hold offers no
+stale retry, another client's revision change clears approval, and an expired
+approval is cleared by the refresh handler. A successful UI retry also verifies
+rendered simulation evidence. The expiry timer uses that same refresh handler;
+the suite does not spend two minutes testing wall-clock expiry end to end.
+
+Mobile screenshots were recaptured after the fix. Browser automation also opens
+and closes an event disclosure and checks that stale retry controls are absent.
+The smoke probe now tolerates TIME_WAIT after cleanup while still rejecting an
+active listener; a repeat run and active-listener refusal were verified.

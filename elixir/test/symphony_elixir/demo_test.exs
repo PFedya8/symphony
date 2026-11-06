@@ -207,6 +207,8 @@ defmodule SymphonyElixir.DemoTest do
 
     view |> element("button", "preview") |> render_click()
     view |> element("button", "Approve and start simulation") |> render_click()
+    refute has_element?(view, "button", "Approve and start simulation")
+    refute render(view) =~ "Preview "
     run_id = hd(snapshot()["runs"])["id"]
     cli = Path.expand("../cli/symphonyctl")
     env = [{"SYMPHONY_URL", "http://127.0.0.1:#{port}"}, {"SYMPHONY_DEMO_TOKEN", token}]
@@ -217,5 +219,30 @@ defmodule SymphonyElixir.DemoTest do
     eventually(fn -> render(view) =~ "stopped" end)
     assert render(view) =~ "hold: true"
     assert Enum.any?(snapshot()["events"], &(&1["op"] == "stop"))
+    refute has_element?(view, "button", "Approve new retry")
+    assert has_element?(view, "details summary", "stop")
+    view |> element("button", "release-hold") |> render_click()
+    view |> element("button", "preview") |> render_click()
+    assert has_element?(view, "button", "Approve new retry")
+    command("hold")
+    eventually(fn -> not has_element?(view, "button", "Approve new retry") end)
+    refute render(view) =~ "Preview "
+
+    socket = %Phoenix.LiveView.Socket{
+      assigns: %{
+        __changed__: %{},
+        approval: %{"id" => "expired", "revision" => snapshot()["task"]["revision"], "expires" => System.system_time(:second) - 1}
+      }
+    }
+
+    assert {:noreply, refreshed} = SymphonyElixirWeb.TasksLive.handle_info(:demo_updated, socket)
+    assert refreshed.assigns.approval == nil
+
+    view |> element("button", "release-hold") |> render_click()
+    view |> element("button", "preview") |> render_click()
+    view |> element("button", "Approve new retry") |> render_click()
+    eventually(fn -> render(view) =~ "succeeded" end)
+    assert has_element?(view, "details summary", "Simulation evidence")
+    refute has_element?(view, "button", "Approve new retry")
   end
 end

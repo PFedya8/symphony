@@ -20,6 +20,7 @@ BASE = f'http://127.0.0.1:{PORT}'
 def main():
     # Never send test mutations to an already-running user's demo.
     with socket.socket() as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(('127.0.0.1', PORT))
     with tempfile.TemporaryDirectory(prefix='symphony-check-') as directory:
         token = secrets.token_hex(32)
@@ -82,6 +83,15 @@ def main():
                 cli = subprocess.run([str(ROOT / 'cli/symphonyctl'), 'runs', 'list', '--json'],
                     env=env, capture_output=True, text=True, check=True)
                 assert json.loads(cli.stdout)[0]['id'] == run['id']
+                sync = [str(ROOT / 'cli/symphonyctl'), 'sync', '--revision', '2']
+                count = sum(event['op'] == 'sync' for event in api('snapshot')['events'])
+                for _ in range(2):
+                    subprocess.run(sync + ['--key', 'repeatable-sync'], env=env,
+                                   capture_output=True, text=True, check=True)
+                assert sum(event['op'] == 'sync' for event in api('snapshot')['events']) == count + 1
+                for _ in range(2):
+                    subprocess.run(sync, env=env, capture_output=True, text=True, check=True)
+                assert sum(event['op'] == 'sync' for event in api('snapshot')['events']) == count + 3
                 api('commands', {'op': 'hold', 'revision': 2, 'key': 'hold'})
                 deadline = time.monotonic() + 10
                 while time.monotonic() < deadline:

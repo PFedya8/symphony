@@ -31,6 +31,12 @@ const path = require('node:path');
     await page.getByRole('button', {name: 'Stop and hold', exact: true}).click();
     await page.getByText('stopped · attempt 1', {exact: false}).waitFor();
     await page.getByText('hold: true', {exact: false}).waitFor();
+    if (await page.getByRole('button', {name: 'Approve new retry', exact: true}).count()) {
+      throw new Error('Stale approval control remains after stop');
+    }
+    await page.locator('details').first().locator('summary').click();
+    await page.locator('details[open] pre').waitFor({state: 'visible'});
+    await page.locator('details').first().locator('summary').click();
     await page.screenshot({path: path.join(out, '02-stopped-mobile.png'), fullPage: true});
     await page.getByRole('button', {name: 'release-hold', exact: true}).click();
     await page.getByRole('button', {name: 'preview', exact: true}).click();
