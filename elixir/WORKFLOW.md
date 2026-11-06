@@ -331,3 +331,7 @@ Use this exact structure for the persistent workpad comment and keep it updated 
 <!-- The isolated fixture mode is boot-selected by demo.exs and demo-workflow.md.
 It does not run this workflow's hooks/prompts or real tracker/agent tools.
 See ../docs/DEVOPS_SLICE_PROGRESS.md for its separate manual control contract. -->
+
+<!-- The separate demo.exs launcher uses demo-workflow.md, remains loopback-only,
+     and accepts SYMPHONY_DEMO_PORT (1024–65535) as a port override.
+     See ../docs/MANUAL_DEMO_GUIDE.md for isolated fixture setup. -->

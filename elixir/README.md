@@ -411,3 +411,12 @@ Use `mix run --no-start demo.exs` with `SYMPHONY_DEMO_DB` and a securely supplie
 polling inside the existing orchestrator with explicit simulated dispatch. It binds
 loopback port 4000; `/tasks` and `/api/v1/control/*` share persistent state.
 See [the slice record](../docs/DEVOPS_SLICE_PROGRESS.md) for commands and limitations.
+
+### Isolated manual fixture demo
+
+See [the manual demo guide](../docs/MANUAL_DEMO_GUIDE.md) for browser/CLI use,
+repeatable verification and instance isolation. `mix run --no-start demo.exs`
+requires a private `SYMPHONY_DEMO_DB` path and a random `SYMPHONY_DEMO_TOKEN`
+of at least 32 bytes. Optional `SYMPHONY_DEMO_PORT` (1024–65535, default 4000)
+lets separate local instances use distinct ports; each also needs its own database
+and token. The demo remains loopback-only and never runs real agents.

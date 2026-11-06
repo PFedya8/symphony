@@ -46,3 +46,7 @@ An opt-in simulated task slice adds a shared SQLite-backed command service,
 Phoenix task UI and thin `cli/symphonyctl` HTTP client. See
 [setup, scope and validation](docs/DEVOPS_SLICE_PROGRESS.md). Real tracker work and
 release verification remain separate from simulated run success.
+
+For the isolated Elixir manual fixture UI, CLI and verification steps, see the
+[manual demo guide](docs/MANUAL_DEMO_GUIDE.md). Separate demo instances can use
+distinct local ports, databases and tokens; this is not multi-tenant hosting.
