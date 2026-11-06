@@ -327,3 +327,7 @@ Use this exact structure for the persistent workpad comment and keep it updated 
 
 - <only include when something was confusing during execution>
 ````
+
+<!-- The isolated fixture mode is boot-selected by demo.exs and demo-workflow.md.
+It does not run this workflow's hooks/prompts or real tracker/agent tools.
+See ../docs/DEVOPS_SLICE_PROGRESS.md for its separate manual control contract. -->

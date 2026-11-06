@@ -26,7 +26,12 @@ defmodule SymphonyElixirWeb.ObservabilityApiController do
 
   @spec refresh(Conn.t(), map()) :: Conn.t()
   def refresh(conn, _params) do
-    case Presenter.refresh_payload(orchestrator()) do
+    result =
+      if Application.get_env(:symphony_elixir, :demo),
+        do: {:error, :unavailable},
+        else: Presenter.refresh_payload(orchestrator())
+
+    case result do
       {:ok, payload} ->
         conn
         |> put_status(202)

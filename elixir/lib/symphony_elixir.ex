@@ -40,11 +40,11 @@ defmodule SymphonyElixir.Application do
       SymphonyElixir.WorkflowStore,
       SymphonyElixir.AgentRuntimeSupervisor,
       SymphonyElixir.HttpServer,
-      SymphonyElixir.StatusDashboard
+      if(Application.get_env(:symphony_elixir, :demo), do: nil, else: SymphonyElixir.StatusDashboard)
     ]
 
     Supervisor.start_link(
-      children,
+      Enum.reject(children, &is_nil/1),
       strategy: :one_for_one,
       name: SymphonyElixir.Supervisor
     )

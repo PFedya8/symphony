@@ -53,6 +53,18 @@ defmodule SymphonyElixir.Orchestrator do
 
   @impl true
   def init(opts) do
+    if Application.get_env(:symphony_elixir, :demo) do
+      {:ok, {:demo, SymphonyElixir.Demo.open(opts)}}
+    else
+      init_tracker(opts)
+    end
+  end
+
+  @impl true
+  def terminate(_reason, {:demo, state}), do: Exqlite.Sqlite3.close(state.db)
+  def terminate(_reason, _state), do: :ok
+
+  defp init_tracker(opts) do
     case Config.settings() do
       {:ok, config} ->
         now_ms = System.monotonic_time(:millisecond)
@@ -77,6 +89,11 @@ defmodule SymphonyElixir.Orchestrator do
       {:error, reason} ->
         {:stop, reason}
     end
+  end
+
+  @impl true
+  def handle_info(message, {:demo, state}) do
+    {:noreply, {:demo, SymphonyElixir.Demo.event(message, state)}}
   end
 
   @impl true
@@ -1406,6 +1423,15 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   @impl true
+  def handle_call({:demo, request}, _from, {:demo, state}) do
+    {reply, state} = SymphonyElixir.Demo.command(request, state)
+    {:reply, reply, {:demo, state}}
+  end
+
+  def handle_call(_request, _from, {:demo, _} = state), do: {:reply, {:error, :unavailable}, state}
+
+  def handle_call({:demo, _request}, _from, state), do: {:reply, {:error, "disabled"}, state}
+
   def handle_call(:snapshot, _from, state) do
     state = refresh_runtime_config(state)
     now = DateTime.utc_now()

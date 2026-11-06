@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Thin HTTP client. No task database or scheduling logic."""
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+
+
+def request(path, payload=None):
+    token = os.environ.get('SYMPHONY_DEMO_TOKEN', '')
+    base = os.environ.get('SYMPHONY_URL', 'http://127.0.0.1:4000')
+    req = urllib.request.Request(base + '/api/v1/control/' + path,
+        data=None if payload is None else json.dumps(payload).encode(),
+        headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=10) as response:
+        return json.load(response)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('group', choices=['capabilities', 'sync', 'tasks', 'runs'])
+    parser.add_argument('action', nargs='?', default='list')
+    parser.add_argument('id', nargs='?')
+    parser.add_argument('--json', action='store_true')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--approval')
+    parser.add_argument('--revision', type=int)
+    parser.add_argument('--key', default=str(uuid.uuid4()))
+    parser.add_argument('--reason')
+    parser.add_argument('--follow', action='store_true')
+    args = parser.parse_args()
+    if args.reason:
+        parser.error('--reason text persistence is not supported by the fixed-output fixture demo')
+    if args.group == 'capabilities':
+        result = request('capabilities')
+    elif args.group == 'sync' or args.action in ['start', 'hold', 'release-hold', 'stop', 'retry', 'resume']:
+        if args.revision is None:
+            parser.error('mutations require --revision from tasks show')
+        op = 'sync' if args.group == 'sync' else args.action
+        if args.dry_run:
+            op = 'preview'
+        result = request('commands', {'op': op, 'revision': args.revision,
+            'key': args.key, 'approval': args.approval,
+            'task_id': args.id if args.group == 'tasks' else None,
+            'run_id': args.id if args.group == 'runs' else None})
+    elif args.action in ['list', 'show', 'history', 'logs']:
+        cursor = 0
+        while True:
+            snapshot = request('snapshot')
+            if args.group == 'tasks':
+                if args.id and args.id != snapshot['task']['id']:
+                    raise ValueError('not_found')
+                result = snapshot['events'] if args.action == 'history' else snapshot['task']
+            else:
+                runs = [r for r in snapshot['runs'] if not args.id or r['id'] == args.id]
+                if args.id and not runs:
+                    raise ValueError('not_found')
+                result = runs
+                if args.action == 'logs':
+                    page = request('events?cursor=' + str(cursor))
+                    cursor = page['cursor']
+                    result = [e for e in page['items'] if e['result'].get('id') == args.id]
+            if not args.follow:
+                break
+            if result:
+                print(json.dumps(result), flush=True)
+            time.sleep(1)
+    else:
+        parser.error('unsupported action')
+    if not args.json and args.action == 'list' and args.group in ('tasks', 'runs'):
+        rows = result if isinstance(result, list) else [result]
+        for row in rows:
+            print(f"{row['id']}\t{row.get('state', row.get('status', 'unknown'))}\t{row.get('title', '')}")
+    else:
+        print(json.dumps(result, indent=2 if not args.json else None))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except urllib.error.HTTPError as exc:
+        print(exc.read().decode(), file=sys.stderr)
+        sys.exit(3 if exc.code in (401, 403) else 2)
+    except (OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)

@@ -1,0 +1,20 @@
+{
+  "profile": "development, one trial, one fixture; no browser",
+  "startup_seconds": 0.538635801999817,
+  "idle": {
+    "seconds": 10.002396152000074,
+    "cpu_core_fraction": 0.002999281326605047,
+    "rss_kib": 99568
+  },
+  "one_simulated_worker": {
+    "seconds": 2.0000813629999357,
+    "cpu_core_fraction": 0.004999796600774747,
+    "rss_kib": 99388
+  },
+  "single_cli_seconds": 0.04321677100006127,
+  "run_id": "KmlXCID1bi9ydAskdFDzuXV3",
+  "checkout": "8f18afa81c8150d72860958365c659b0a6080c81 + uncommitted slice",
+  "runtime": "Elixir 1.19.5 / Erlang OTP 28.5",
+  "host": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "limitations": "One short development trial; no UI renderer, separate agent subprocess, p95, four-worker load or production acceptance measurement."
+}

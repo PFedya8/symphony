@@ -2310,3 +2310,11 @@ Extension config:
 - Cleanup and observability:
   - Operators need to know which host owns a run, where its workspace lives, and whether cleanup
     happened on the right machine.
+
+## Appendix B. Manual fixture extension
+
+The opt-in manual demo described in `docs/DEVOPS_SLICE_PROGRESS.md` replaces
+poll-driven dispatch and automatic continuation with explicit approved commands.
+It stores fixture execution records durably, reconciles unknown active records as
+interrupted, and never infers tracker completion from run success. This extension
+is disabled by default and does not change the core tracker-mode lifecycle.
