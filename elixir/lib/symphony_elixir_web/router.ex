@@ -14,6 +14,22 @@ defmodule SymphonyElixirWeb.Router do
     plug(:put_secure_browser_headers)
   end
 
+  pipeline :demo do
+    plug(:fetch_session)
+    plug(SymphonyElixirWeb.DemoAuth)
+  end
+
+  scope "/", SymphonyElixirWeb do
+    pipe_through([:browser, :demo])
+    live("/tasks", TasksLive, :index)
+  end
+
+  scope "/api/v1/control", SymphonyElixirWeb do
+    pipe_through(:demo)
+    get("/:view", TaskApiController, :read)
+    post("/commands", TaskApiController, :command)
+  end
+
   scope "/", SymphonyElixirWeb do
     get("/dashboard.css", StaticAssetController, :dashboard_css)
     get("/favicon.png", StaticAssetController, :favicon)

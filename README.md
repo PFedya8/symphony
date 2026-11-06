@@ -39,3 +39,10 @@ help with the setup:
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
+
+## Manual task-management demo
+
+An opt-in simulated task slice adds a shared SQLite-backed command service,
+Phoenix task UI and thin `cli/symphonyctl` HTTP client. See
+[setup, scope and validation](docs/DEVOPS_SLICE_PROGRESS.md). Real tracker work and
+release verification remain separate from simulated run success.

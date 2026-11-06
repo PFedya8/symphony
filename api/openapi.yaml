@@ -1,0 +1,63 @@
+openapi: 3.1.0
+info:
+  title: Symphony manual fixture control
+  version: 0.1.0
+  description: >-
+    Disabled by default. One fixture, three attempts, one simulated worker.
+    Run success does not complete a task or verify a release. No remote hosting supported.
+servers:
+  - url: http://127.0.0.1:4000
+security:
+  - controlToken: []
+paths:
+  /api/v1/control/{view}:
+    get:
+      parameters:
+        - name: view
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [snapshot, capabilities, events]
+        - name: cursor
+          in: query
+          schema: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: Snapshot of fixture task/runs/history; capabilities; or at most 100 events with next cursor.
+        '401': {description: Missing or invalid bearer token}
+        '409': {description: Invalid cursor or unavailable service}
+  /api/v1/control/commands:
+    post:
+      description: >-
+        Shared serialized command boundary. Revision is the task revision from snapshot.
+        Preview expires after 120 seconds and binds fixture scope and task revision.
+        start/retry require its approval ID. Retry requires a terminal parent run.
+        Hold prevents future dispatch; stop persists intent and hold before signaling the worker.
+        Stopped is published only after worker DOWN. Same key and identical request replays the
+        stored response; different payload yields idempotency_conflict. Sync never dispatches.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [op, revision, key]
+              properties:
+                op:
+                  type: string
+                  enum: [preview, start, hold, release-hold, stop, retry, resume, sync]
+                revision: {type: integer, minimum: 1}
+                key: {type: string, minLength: 1, maxLength: 100}
+                task_id: {type: string}
+                run_id: {type: string}
+                approval: {type: string}
+      responses:
+        '200': {description: Committed command result; stop result is intent, not confirmed exit}
+        '401': {description: Missing or invalid bearer token; browser Basic credentials cannot mutate API}
+        '403': {description: Forbidden scope}
+        '409':
+          description: Machine-readable error.code including stale_revision, approval_required, held, capacity, budget_exhausted, resume_not_supported, idempotency_conflict, not_found, demo_history_full.
+components:
+  securitySchemes:
+    controlToken: {type: http, scheme: bearer}
