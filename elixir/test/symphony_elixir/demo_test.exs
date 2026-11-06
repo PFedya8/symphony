@@ -178,6 +178,84 @@ defmodule SymphonyElixir.DemoTest do
     File.rm!(path)
   end
 
+  # Do not retain SQLite resource references in the test process across restart.
+  defp seed_commands(count) do
+    Task.async(fn ->
+      :sys.replace_state(DemoOwner, &seed_state(&1, count))
+
+      :ok
+    end)
+    |> Task.await()
+  end
+
+  defp seed_state({:demo, state}, count) do
+    commands = Map.new(1..count, fn n -> {"old-#{n}", %{"fingerprint" => "seed", "result" => %{}}} end)
+
+    cursor =
+      case List.last(state.data["events"]) do
+        nil -> 0
+        event -> event["cursor"]
+      end
+
+    events = Enum.map(1..count, fn n -> %{"cursor" => cursor + n, "op" => "sync", "result" => %{}} end)
+    state = state |> update_in([:data, "commands"], &Map.merge(&1, commands)) |> update_in([:data, "events"], &Enum.take(&1 ++ events, -1000))
+    {:demo, state}
+  end
+
+  test "concurrent emergency stops at capacity accept only one new command" do
+    run = start_run()
+    seed_commands(998)
+
+    replies =
+      1..10
+      |> Task.async_stream(fn n ->
+        request(%{"op" => "stop", "scope" => "control", "key" => "stop-#{n}", "revision" => 2, "run_id" => run["id"]})
+      end)
+      |> Enum.map(fn {:ok, reply} -> reply end)
+
+    assert Enum.count(replies, &match?({:ok, _}, &1)) == 1
+    assert Enum.count(replies, &(&1 == {:error, "stale_revision"})) == 9
+    eventually(fn -> hd(snapshot()["runs"])["state"] == "stopped" end)
+    assert snapshot()["task"]["hold"]
+    assert Task.Supervisor.children(DemoWorkers) == []
+    assert {:error, "demo_history_full"} = command("hold")
+    assert {:error, "demo_history_full"} = command("stop", %{"run_id" => run["id"]})
+  end
+
+  test "emergency hold and stop remain durable when start fills command capacity" do
+    seed_commands(998)
+
+    run = start_run()
+    assert {:error, "demo_history_full"} = command("sync")
+    hold = %{"op" => "hold", "scope" => "control", "key" => "emergency-hold", "revision" => 2}
+    assert {:ok, _} = request(hold)
+    assert {:error, "demo_history_full"} = command("hold")
+    stop = %{"op" => "stop", "scope" => "control", "key" => "emergency-stop", "revision" => 3, "run_id" => run["id"]}
+    assert {:ok, result} = request(stop)
+    eventually(fn -> hd(snapshot()["runs"])["state"] == "stopped" end)
+    assert Task.Supervisor.children(DemoWorkers) == []
+    assert {:error, "demo_history_full"} = command("stop", %{"run_id" => run["id"]})
+    assert {:error, "demo_history_full"} = command("release-hold")
+
+    assert Task.async(fn ->
+             {:demo, state} = :sys.get_state(DemoOwner)
+             map_size(state.data["commands"])
+           end)
+           |> Task.await() == 1002
+
+    :ok = stop_supervised(SymphonyElixir.AgentRuntimeSupervisor)
+    start_runtime()
+    assert {:ok, ^result} = request(stop)
+    assert {:ok, _} = request(hold)
+    assert snapshot()["task"]["hold"]
+    assert hd(snapshot()["runs"])["state"] == "stopped"
+    events = snapshot()["events"]
+    assert length(events) == 1000
+    assert Enum.all?(Enum.chunk_every(events, 2, 1, :discard), fn [a, b] -> b["cursor"] == a["cursor"] + 1 end)
+    for op <- ~w(hold stop stopped), do: assert(Enum.any?(events, &(&1["op"] == op)))
+    assert {:error, "idempotency_conflict"} = request(Map.put(stop, "revision", 4))
+  end
+
   test "LiveView start and real HTTP CLI share run IDs, holds and auth rules" do
     token = String.duplicate("fixture-test-only-", 3)
     Application.put_env(:symphony_elixir, :demo_token, token)

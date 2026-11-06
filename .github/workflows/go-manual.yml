@@ -1,0 +1,28 @@
+name: go-manual
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  go-manual:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: go-manual
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go-manual/go.mod
+          cache-dependency-path: go-manual/go.sum
+      - name: Format, vet and race tests
+        run: |
+          test -z "$(gofmt -l *.go)"
+          go vet ./...
+          go test -race -cover ./...
+      - name: Build
+        run: go build -buildvcs=false -o "$RUNNER_TEMP/go-manual" .

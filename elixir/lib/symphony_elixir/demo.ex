@@ -81,7 +81,7 @@ defmodule SymphonyElixir.Demo do
     task = state.data["task"]
     require!(req["revision"] == task["revision"], "stale_revision")
     require!(req["task_id"] in [nil, task["id"]], "not_found")
-    require!(map_size(state.data["commands"]) < 1000, "demo_history_full")
+    require!(map_size(state.data["commands"]) < 1000 or emergency?(req, state.data), "demo_history_full")
     {result, data, effect} = transition(req, state.data)
     data = put_in(data["commands"][req["key"]], %{"fingerprint" => fingerprint, "result" => result})
     data = audit(data, req["op"], req["actor"] || "operator", task["revision"], result)
@@ -90,6 +90,16 @@ defmodule SymphonyElixir.Demo do
     publish()
     {{:ok, result}, state}
   end
+
+  # After capacity, only monotone safety changes can add records: at most one
+  # hold and one stop. Replay, scope and revision checks still precede this gate.
+  defp emergency?(%{"op" => "hold"}, data), do: not data["task"]["hold"]
+
+  defp emergency?(%{"op" => "stop"} = req, data) do
+    Enum.any?(data["runs"], &(&1["id"] == req["run_id"] and &1["state"] in ~w(starting running)))
+  end
+
+  defp emergency?(_, _), do: false
 
   defp transition(%{"op" => "preview"}, data) do
     eligible!(data)

@@ -70,8 +70,12 @@ before copying its database for backup. Never share one DB between Go and Elixir
 although the storage table is similar, idempotency fingerprints and recovery
 implementations are not an interchange/migration contract. There is no import tool.
 
-History is bounded to 1,000 events and 1,000 accepted commands; reaching command
-capacity rejects further writes. For a fresh disposable demo, use a **new database
+History retains the latest 1,000 events and normally accepts 1,000 commands.
+At capacity, ordinary writes are rejected, but an effective hold and an active-run
+stop remain available (at most two additional durable command records). New no-op
+holds/stops and release/retry/start are rejected. Exact-key replays still return
+the original result; no command records are evicted. Authentication, revision
+checks and successful storage remain required for safety actions. For a fresh disposable demo, use a **new database
 path**. Keep old databases if you need their history.
 
 ## A second project
@@ -119,3 +123,8 @@ real UI behavior and writes [desktop](../docs/go-evidence/03-retry-succeeded.png
 and [mobile](../docs/go-evidence/04-mobile.png) screenshots. The screenshots show
 synthetic fixture data and no token. They do not establish every possible behavior
 or production readiness. See [benchmark method/results](../bench/GO_COMPARISON.md).
+
+GitHub Actions now runs Go formatting, vet, race/coverage tests and a build on
+pull requests and pushes to main (`.github/workflows/go-manual.yml`). Browser and
+cross-runtime contract checks remain manual; branch-protection enforcement is not
+configured by this PR.

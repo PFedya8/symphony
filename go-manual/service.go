@@ -144,6 +144,22 @@ func eligible(d *state) string {
 	}
 	return ""
 }
+
+// Once ordinary history fills, only monotone safety changes may add records.
+// No release/start/retry can follow, so at most one hold and one stop are added.
+// Replay/conflict, authentication and revision checks still run before this gate.
+func emergency(req obj, d *state) bool {
+	switch req["op"] {
+	case "hold":
+		return d.Task["hold"] == false
+	case "stop":
+		r := find(d, req["run_id"])
+		return r != nil && (r["state"] == "starting" || r["state"] == "running")
+	default:
+		return false
+	}
+}
+
 func (s *service) request(req obj) (any, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,7 +234,7 @@ func (s *service) request(req obj) (any, string) {
 	if req["task_id"] != nil && req["task_id"] != s.data.Task["id"] {
 		return nil, "not_found"
 	}
-	if len(s.data.Commands) >= 1000 {
+	if len(s.data.Commands) >= 1000 && !emergency(req, &s.data) {
 		return nil, "demo_history_full"
 	}
 	d := clone(s.data)

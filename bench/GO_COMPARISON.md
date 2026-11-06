@@ -130,3 +130,9 @@ are in [`docs/go-evidence`](../docs/go-evidence/README.md).
 The optional Docker recipe was also built successfully and smoke-tested with one
 trial per implementation and one-second idle windows. Those packaging smoke
 numbers are deliberately not mixed into the three-trial results above.
+
+A later [capacity-safety follow-up](../docs/go-evidence/CAPACITY_FIX.md) fixes
+stop/hold at the history limit in both backends and adds Go CI. Its validation
+passed 13 Go tests (82.9% coverage) and all Elixir gates (312 tests, six skipped).
+The measurements above predate that targeted fix and were not rerun; their
+low-volume workload never reaches the changed capacity branch.

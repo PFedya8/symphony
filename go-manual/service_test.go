@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -302,4 +303,116 @@ func TestAsyncStorageFailureFailsClosed(t *testing.T) {
 	if code != "storage_unavailable" {
 		t.Fatal(code)
 	}
+}
+
+func TestEmergencyControlsAtCapacity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capacity.sqlite")
+	s, err := openService(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { s.close() }()
+	s.duration = time.Hour
+	// Seed only old command records, then consume the final two slots normally.
+	for i := 0; i < 998; i++ {
+		s.data.Commands[fmt.Sprintf("old-%d", i)] = obj{"fingerprint": "seed", "result": obj{"simulated": true}}
+		s.data.Events = append(s.data.Events, obj{"cursor": float64(i + 1), "op": "sync", "result": obj{}})
+	}
+	a := good(t, s, "preview", nil)
+	r := good(t, s, "start", obj{"approval": a["id"]})
+	waitState(t, s, r["id"].(string), "running")
+	if len(s.data.Commands) != 1000 {
+		t.Fatal("start did not consume final slot")
+	}
+	reject(t, s, "sync", "demo_history_full", nil)
+	hold := obj{"op": "hold", "scope": "control", "key": "emergency-hold", "revision": float64(2)}
+	if _, code := s.request(hold); code != "" {
+		t.Fatalf("hold at capacity: %s", code)
+	}
+	reject(t, s, "hold", "demo_history_full", nil)
+	stop := obj{"op": "stop", "scope": "control", "key": "emergency-stop", "revision": float64(3), "run_id": r["id"]}
+	result, code := s.request(stop)
+	if code != "" {
+		t.Fatalf("stop at capacity: %s", code)
+	}
+	waitState(t, s, r["id"].(string), "stopped")
+	reject(t, s, "stop", "demo_history_full", obj{"run_id": r["id"]})
+	reject(t, s, "release-hold", "demo_history_full", nil)
+	if len(s.data.Commands) != 1002 {
+		t.Fatal("emergency reserve not bounded")
+	}
+	s.close()
+	s, err = openService(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, code := s.request(stop)
+	if code != "" {
+		t.Fatal(code)
+	}
+	b, _ := json.Marshal(result)
+	c, _ := json.Marshal(replay)
+	if string(b) != string(c) {
+		t.Fatal("stop replay changed")
+	}
+	if _, code = s.request(hold); code != "" {
+		t.Fatal("hold replay lost", code)
+	}
+	if !s.data.Task["hold"].(bool) || find(&s.data, r["id"])["state"] != "stopped" {
+		t.Fatal("emergency state not durable")
+	}
+	if len(s.data.Events) != 1000 {
+		t.Fatal("audit retention changed")
+	}
+	for i := 1; i < len(s.data.Events); i++ {
+		if s.data.Events[i]["cursor"].(float64) != s.data.Events[i-1]["cursor"].(float64)+1 {
+			t.Fatal("audit cursor discontinuity")
+		}
+	}
+	for _, op := range []string{"hold", "stop", "stopped"} {
+		found := false
+		for _, event := range s.data.Events {
+			if event["op"] == op {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing durable audit %s", op)
+		}
+	}
+	reject(t, s, "stop", "idempotency_conflict", obj{"key": "emergency-stop", "run_id": r["id"]})
+}
+
+func TestConcurrentEmergencyStopsAtCapacity(t *testing.T) {
+	s := testService(t)
+	s.duration = time.Hour
+	for i := 0; i < 998; i++ {
+		s.data.Commands[fmt.Sprintf("old-%d", i)] = obj{"fingerprint": "seed", "result": obj{}}
+	}
+	a := good(t, s, "preview", nil)
+	r := good(t, s, "start", obj{"approval": a["id"]})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	accepted := 0
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, code := s.request(obj{"op": "stop", "scope": "control", "key": id(), "revision": float64(2), "run_id": r["id"]})
+			if code == "" {
+				mu.Lock()
+				accepted++
+				mu.Unlock()
+			} else if code != "stale_revision" {
+				t.Error(code)
+			}
+		}()
+	}
+	wg.Wait()
+	waitState(t, s, r["id"].(string), "stopped")
+	if accepted != 1 || len(s.data.Commands) != 1001 || s.data.Task["hold"] != true {
+		t.Fatalf("accepted=%d count=%d", accepted, len(s.data.Commands))
+	}
+	reject(t, s, "hold", "demo_history_full", nil)
+	reject(t, s, "stop", "demo_history_full", obj{"run_id": r["id"]})
 }

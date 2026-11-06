@@ -411,3 +411,9 @@ Use `mix run --no-start demo.exs` with `SYMPHONY_DEMO_DB` and a securely supplie
 polling inside the existing orchestrator with explicit simulated dispatch. It binds
 loopback port 4000; `/tasks` and `/api/v1/control/*` share persistent state.
 See [the slice record](../docs/DEVOPS_SLICE_PROGRESS.md) for commands and limitations.
+
+At the manual demo’s 1,000-command limit, ordinary writes stop but an effective
+hold and an active-run stop remain available. These add at most two durable
+records, without evicting idempotency results. New no-op safety commands and
+release/start/retry remain blocked. Authentication, revisions and storage success
+are still required; the audit retains its latest 1,000 events.

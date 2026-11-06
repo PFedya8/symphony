@@ -54,3 +54,6 @@ controls with a shared HTTP backend for its UI and the existing CLI. It includes
 [reproducible resource measurements](bench/GO_COMPARISON.md), browser evidence,
 and [project/integration boundaries](docs/GO_INTEGRATIONS.md). It is not a port of
 the complete Elixir orchestrator or its external tracker integrations.
+
+Both manual fixture backends retain effective stop/hold controls when ordinary
+command history reaches capacity, with durable idempotency and bounded safety records.

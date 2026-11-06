@@ -40,3 +40,10 @@ Packaging:
   docker run --rm <built image> --trials 1 --idle 1 --output /tmp/comparison-smoke.json
   PASS: both Go and Elixir phases plus CLI completed.
   This packaging smoke run is separate from bench/comparison.json's three-trial data.
+
+Capacity-safety follow-up (see CAPACITY_FIX.md):
+  Confirmed final-slot start blocked hold in both original implementations.
+  Go: 13 tests passed with -race; 82.9% coverage; vet and build passed.
+  Elixir make all: 312 tests, 0 failures, 6 skipped; configured coverage 100%;
+  formatting, specs, Credo and Dialyzer passed.
+  Added Go pull-request CI workflow; hosted execution is separately verified.
