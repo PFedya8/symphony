@@ -207,6 +207,8 @@ defmodule SymphonyElixir.DemoTest do
 
     view |> element("button", "preview") |> render_click()
     view |> element("button", "Approve and start simulation") |> render_click()
+    refute has_element?(view, "button", "Approve and start simulation")
+    refute render(view) =~ "Preview "
     run_id = hd(snapshot()["runs"])["id"]
     cli = Path.expand("../cli/symphonyctl")
     env = [{"SYMPHONY_URL", "http://127.0.0.1:#{port}"}, {"SYMPHONY_DEMO_TOKEN", token}]
@@ -217,5 +219,71 @@ defmodule SymphonyElixir.DemoTest do
     eventually(fn -> render(view) =~ "stopped" end)
     assert render(view) =~ "hold: true"
     assert Enum.any?(snapshot()["events"], &(&1["op"] == "stop"))
+    refute has_element?(view, "button", "Approve new retry")
+    assert has_element?(view, "details summary", "stop")
+    view |> element("button", "release-hold") |> render_click()
+    view |> element("button", "preview") |> render_click()
+    assert has_element?(view, "button", "Approve new retry")
+    command("hold")
+    eventually(fn -> not has_element?(view, "button", "Approve new retry") end)
+    refute render(view) =~ "Preview "
+
+    socket = %Phoenix.LiveView.Socket{
+      assigns: %{
+        __changed__: %{},
+        approval: %{"id" => "expired", "revision" => snapshot()["task"]["revision"], "expires" => System.system_time(:second) - 1}
+      }
+    }
+
+    assert {:noreply, refreshed} = SymphonyElixirWeb.TasksLive.handle_info(:demo_updated, socket)
+    assert refreshed.assigns.approval == nil
+
+    view |> element("button", "release-hold") |> render_click()
+    view |> element("button", "preview") |> render_click()
+    view |> element("button", "Approve new retry") |> render_click()
+    eventually(fn -> render(view) =~ "succeeded" end)
+    assert has_element?(view, "details summary", "Simulation evidence")
+    refute has_element?(view, "button", "Approve new retry")
+  end
+
+  test "two clients invalidate replaced previews without disclosing approval credentials" do
+    token = String.duplicate("two-client-test-", 3)
+    Application.put_env(:symphony_elixir, :demo_token, token)
+    Application.put_env(:symphony_elixir, :demo_server, DemoOwner)
+    endpoint_config = Application.get_env(:symphony_elixir, @endpoint)
+
+    on_exit(fn ->
+      Application.delete_env(:symphony_elixir, :demo_token)
+      Application.delete_env(:symphony_elixir, :demo_server)
+      Application.put_env(:symphony_elixir, @endpoint, endpoint_config)
+    end)
+
+    start_supervised!({SymphonyElixir.HttpServer, port: 0, host: "127.0.0.1"})
+    conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
+    {:ok, first, _} = live(conn, "/tasks")
+    {:ok, second, _} = live(conn, "/tasks")
+    first_html = first |> element("button", "preview") |> render_click()
+    [_, first_id] = Regex.run(~r/Preview ([^:]+):/, first_html)
+    assert has_element?(first, "button", "Approve and start simulation")
+    second_html = second |> element("button", "preview") |> render_click()
+    [_, second_id] = Regex.run(~r/Preview ([^:]+):/, second_html)
+    assert first_id != second_id
+    assert {:ok, %{"approval_valid" => false}} = request(%{"op" => "snapshot", "approval" => first_id})
+    assert {:ok, %{"approval_valid" => true}} = request(%{"op" => "snapshot", "approval" => second_id})
+    assert snapshot()["task"]["revision"] == 1
+    eventually(fn -> not has_element?(first, "button", "Approve and start simulation") end)
+    assert has_element?(second, "button", "Approve and start simulation")
+    refute render(first) =~ second_id
+    refute render(second) =~ first_id
+    assert {:error, "approval_required"} = command("start", %{"approval" => first_id})
+    second |> element("button", "Approve and start simulation") |> render_click()
+    assert length(snapshot()["runs"]) == 1
+    {:ok, events} = request(%{"op" => "events"})
+
+    for id <- [first_id, second_id] do
+      refute Jason.encode!(snapshot()) =~ id
+      refute Jason.encode!(events) =~ id
+      refute render(first) =~ id
+    end
   end
 end

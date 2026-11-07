@@ -20,6 +20,46 @@ def request(path, payload=None):
         return json.load(response)
 
 
+def normalize_identifier(argv):
+    """Separate options from opaque IDs and bind option values before argparse."""
+    value_options = {'--approval', '--revision', '--key', '--reason'}
+    flags = {'--json', '--dry-run', '--follow', '-h', '--help'}
+    known = value_options | flags
+
+    def option_name(arg):
+        name = arg.split('=', 1)[0]
+        if name in known:
+            return name
+        # Preserve argparse's existing unambiguous long-option abbreviations.
+        matches = [option for option in known if option.startswith(name)] if name.startswith('--') else []
+        return matches[0] if len(matches) == 1 else None
+
+    options, positionals = [], []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == '--':
+            positionals.extend(argv[index + 1:])
+            break
+        option = option_name(arg)
+        if option in value_options:
+            if '=' in arg:
+                options.append(option + '=' + arg.split('=', 1)[1])
+            elif index + 1 < len(argv) and argv[index + 1] != '--' and option_name(argv[index + 1]) is None:
+                index += 1
+                options.append(option + '=' + argv[index])
+            else:
+                options.append(option)  # Let argparse report the missing value.
+        elif option in flags:
+            options.append(arg)
+        elif not arg.startswith('-') or len(positionals) == 2:
+            positionals.append(arg)
+        else:
+            options.append(arg)  # Unknown extra options remain errors.
+        index += 1
+    return options + ['--'] + positionals
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('group', choices=['capabilities', 'sync', 'tasks', 'runs'])
@@ -32,7 +72,7 @@ def main():
     parser.add_argument('--key', default=str(uuid.uuid4()))
     parser.add_argument('--reason')
     parser.add_argument('--follow', action='store_true')
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_identifier(sys.argv[1:]))
     if args.reason:
         parser.error('--reason text persistence is not supported by the fixed-output fixture demo')
     if args.group == 'capabilities':

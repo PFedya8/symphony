@@ -22,7 +22,7 @@ defmodule SymphonyElixirWeb.TasksLive do
       "op" => op,
       "task_id" => "fixture-1",
       "run_id" => params["id"],
-      "approval" => socket.assigns.approval,
+      "approval" => socket.assigns.approval && socket.assigns.approval["id"],
       "revision" => socket.assigns.payload["task"]["revision"],
       "key" => Base.url_encode64(:crypto.strong_rand_bytes(18)),
       "scope" => "control",
@@ -31,17 +31,26 @@ defmodule SymphonyElixirWeb.TasksLive do
 
     socket =
       case Service.request(req) do
-        {:ok, result} when op == "preview" -> assign(socket, approval: result["id"], error: nil)
-        {:ok, _} -> assign(socket, error: nil)
-        {:error, code} -> assign(socket, error: code)
+        {:ok, result} when op == "preview" ->
+          Process.send_after(self(), :demo_updated, max(result["expires"] * 1000 - System.system_time(:millisecond), 0))
+          assign(socket, approval: result, error: nil)
+
+        {:ok, _} ->
+          assign(socket, error: nil)
+
+        {:error, code} ->
+          assign(socket, error: code)
       end
 
     {:noreply, refresh(socket)}
   end
 
   defp refresh(socket) do
-    {:ok, payload} = Service.request(%{"op" => "snapshot"})
-    assign(socket, :payload, payload)
+    approval = socket.assigns.approval
+    {:ok, payload} = Service.request(%{"op" => "snapshot", "approval" => approval && approval["id"]})
+    approval = if payload["approval_valid"], do: approval, else: nil
+
+    assign(socket, payload: payload, approval: approval)
   end
 
   @impl true
@@ -55,17 +64,23 @@ defmodule SymphonyElixirWeb.TasksLive do
       <p>Canonical task: {@payload["task"]["status"]} · revision {@payload["task"]["revision"]} · hold: {to_string(@payload["task"]["hold"])}</p>
       <p>Production release: unverified. Resume is not supported.</p>
       <button :for={action <- @payload["task"]["allowed_actions"]} phx-click={action}>{action}</button>
-      <p :if={@approval}>Preview {@approval}: fixture only; expires after two minutes. No commit, push or deployment authorized.</p>
+      <p :if={@approval}>Preview {@approval["id"]}: fixture only; expires after two minutes. No commit, push or deployment authorized.</p>
       <button :if={@approval && @payload["runs"] == []} phx-click="start">Approve and start simulation</button>
       <article :for={run <- @payload["runs"]} id={"run-" <> run["id"]}>
         <h3>Run {run["id"]}</h3>
         <p>{run["state"]} · attempt {run["attempt"]} · parent {run["parent_id"]}</p>
         <button :if={run["state"] in ["starting", "running"]} phx-click="stop" phx-value-id={run["id"]}>Stop and hold</button>
         <button :if={@approval && run["state"] not in ["starting", "running", "stopping"]} phx-click="retry" phx-value-id={run["id"]}>Approve new retry</button>
-        <pre>{Jason.encode!(run["evidence"], pretty: true)}</pre>
+        <details :if={run["evidence"]}>
+          <summary>Simulation evidence</summary>
+          <pre>{Jason.encode!(run["evidence"], pretty: true)}</pre>
+        </details>
       </article>
       <h2>Durable history and simulation logs</h2>
-      <pre :for={event <- @payload["events"]}>{Jason.encode!(event)}</pre>
+      <details :for={event <- @payload["events"]} id={"event-" <> to_string(event["cursor"])}>
+        <summary>{event["at"]} · {event["op"]}</summary>
+        <pre>{Jason.encode!(event, pretty: true)}</pre>
+      </details>
     </section>
     """
   end
