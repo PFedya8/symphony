@@ -26,6 +26,8 @@ jobs:
           go test -race -cover ./...
       - name: Shared CLI regression tests
         working-directory: .
-        run: python3 -m unittest discover -s cli -p 'test_*.py'
+        run: |
+          python3 -m unittest discover -s cli -p 'test_*.py'
+          python3 scripts/test_symphonyctl.py
       - name: Build
         run: go build -buildvcs=false -o "$RUNNER_TEMP/go-manual" .

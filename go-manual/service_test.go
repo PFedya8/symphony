@@ -416,3 +416,79 @@ func TestConcurrentEmergencyStopsAtCapacity(t *testing.T) {
 	reject(t, s, "hold", "demo_history_full", nil)
 	reject(t, s, "stop", "demo_history_full", obj{"run_id": r["id"]})
 }
+
+func TestApprovalConfidentialityAndValidity(t *testing.T) {
+	s := testService(t)
+	s.duration = time.Hour
+	first := good(t, s, "preview", obj{"key": "first-preview"})
+	check := func(approval any, want bool) {
+		t.Helper()
+		value, code := s.request(obj{"op": "snapshot", "approval": approval})
+		if code != "" || value.(obj)["approval_valid"] != want {
+			t.Fatalf("validity: %v %s", value, code)
+		}
+	}
+	check(nil, false)
+	check(first["id"], true)
+	second := good(t, s, "preview", nil)
+	check(first["id"], false)
+	check(second["id"], true)
+	reject(t, s, "start", "approval_required", obj{"approval": first["id"]})
+	for _, op := range []string{"snapshot", "events"} {
+		value, code := s.request(obj{"op": op})
+		encoded, _ := json.Marshal(value)
+		if code != "" || strings.Contains(string(encoded), first["id"].(string)) || strings.Contains(string(encoded), second["id"].(string)) {
+			t.Fatalf("capability leaked: %s %s", code, encoded)
+		}
+	}
+	// Public redaction must not destroy the original private idempotency response.
+	replay := good(t, s, "preview", obj{"key": "first-preview"})
+	if replay["id"] != first["id"] {
+		t.Fatal("redaction changed replay")
+	}
+	check(first["id"], false)
+	s.mu.Lock()
+	s.data.Approvals[second["id"].(string)]["expires"] = float64(0)
+	s.mu.Unlock()
+	check(second["id"], false)
+	third := good(t, s, "preview", nil)
+	good(t, s, "hold", nil)
+	check(third["id"], false)
+	good(t, s, "release-hold", nil)
+	fourth := good(t, s, "preview", nil)
+	run := good(t, s, "start", obj{"approval": fourth["id"]})
+	check(fourth["id"], false)
+	value, _ := s.request(obj{"op": "snapshot"})
+	encoded, _ := json.Marshal(value)
+	if strings.Contains(string(encoded), fourth["id"].(string)) {
+		t.Fatal("run or audit leaked approval")
+	}
+	if run["approval"] != fourth["id"] {
+		t.Fatal("private command response changed")
+	}
+}
+
+func TestPrivateApprovalProbeOverHTTP(t *testing.T) {
+	s := testService(t)
+	approval := good(t, s, "preview", nil)
+	token := strings.Repeat("h", 32)
+	server := httptest.NewServer(handler(s, token))
+	defer server.Close()
+	body, _ := json.Marshal(obj{"op": "snapshot", "approval": approval["id"]})
+	request, _ := http.NewRequest("POST", server.URL+"/api/v1/control/commands", strings.NewReader(string(body)))
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var snapshot obj
+	if json.NewDecoder(response.Body).Decode(&snapshot) != nil || response.StatusCode != 200 || snapshot["approval_valid"] != true {
+		t.Fatal("private probe failed", snapshot)
+	}
+	encoded, _ := json.Marshal(snapshot)
+	if strings.Contains(string(encoded), approval["id"].(string)) {
+		t.Fatal("probe echoed private capability")
+	}
+}

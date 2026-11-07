@@ -88,8 +88,18 @@
       b.onclick = () => command(op, id);
     }
     async function refresh() {
-      snapshot = await api("snapshot");
-      render();
+      const candidate = approval;
+      const next = await api("commands", {
+        op: "snapshot",
+        approval: candidate?.id,
+      });
+      // A late poll must not discard a newer approval created by this tab.
+      if (candidate !== approval) return;
+      const changed = JSON.stringify(snapshot) !== JSON.stringify(next);
+      snapshot = next;
+      if (!snapshot.approval_valid) approval = null;
+      // Avoid replacing unchanged controls between pointer-down and pointer-up.
+      if (changed) render();
     }
     function render() {
       app.replaceChildren();
@@ -137,9 +147,9 @@
           run_id: run_id || null,
           revision: snapshot.task.revision,
           key: crypto.randomUUID(),
-          approval,
+          approval: approval?.id,
         });
-        if (op === "preview") approval = r.id;
+        if (op === "preview") approval = r;
         else if (["start", "retry"].includes(op)) approval = null;
         error.textContent = "";
         await refresh();
@@ -153,6 +163,7 @@
     document.querySelector("#login").onsubmit = async (e) => {
       e.preventDefault();
       token = document.querySelector("#token").value;
+      approval = null;
       document.querySelector("#token").value = "";
       try {
         await refresh();

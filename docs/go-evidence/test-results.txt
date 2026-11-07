@@ -62,3 +62,14 @@ Shared CLI identifier follow-up:
   subprocess HTTP transport; shared contract passed against Go and Elixir.
   Full Elixir suite: 312 tests, 0 failures, 6 skipped.
   CLI regression suite added to the Go CI workflow.
+
+PR #2 coordination:
+  Reusable CLI commit 3fd60dccb74c82449b3d8bc825cc6096cf9a778f reconciles opaque
+  IDs, global options and hyphen-prefixed approval/key values across Python 3.11+.
+  Both CLI suites (7 + 6 tests) passed on Python 3.11, 3.12 and 3.13.
+  Go race suite: passed, 90.8% coverage; vet/build passed.
+  Two-tab Chromium approval replacement/confidentiality/hold/completion passed.
+  Original start/stop/hold/retry/mobile browser flow passed; screenshots refreshed.
+  Temporary PR #2 + PR #3 Elixir merge: make all passed offline with cached deps;
+  313 tests, 0 failures, 6 skipped; configured coverage 100%; specs/Credo/Dialyzer passed.
+  Real merge still needs the documented CLI and three documentation resolutions.

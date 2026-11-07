@@ -133,3 +133,10 @@ Startup errors, including an occupied port, exit nonzero. The listening message
 reports the actual bound address only after initialization; SIGINT/SIGTERM are
 normal shutdowns. See [startup regression evidence](../docs/go-evidence/STARTUP_FIX.md)
 and the [reference UI gap/plan](../docs/GO_UI_GAP.md).
+
+Shared snapshots/events redact approval credentials. The browser keeps only its
+own preview and checks `approval_valid` using an authenticated POST read request;
+replaced, consumed, expired or revision-invalid approvals disappear on refresh.
+Polling updates arrive within roughly one second. Private command replay remains
+unchanged. See [PR #2 compatibility and merge notes](../docs/PR2_COMPATIBILITY.md)
+for the matching Elixir change and reconciled shared CLI.

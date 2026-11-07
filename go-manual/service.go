@@ -160,6 +160,19 @@ func emergency(req obj, d *state) bool {
 	}
 }
 
+// Redact capabilities from public copies only; durable replay records stay intact.
+func publicEvent(event obj) {
+	result, ok := event["result"].(map[string]any)
+	if !ok {
+		return
+	}
+	if event["op"] == "preview" {
+		delete(result, "id")
+	} else {
+		delete(result, "approval")
+	}
+}
+
 func (s *service) request(req obj) (any, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -177,7 +190,16 @@ func (s *service) request(req obj) (any, string) {
 			actions = []string{"release-hold"}
 		}
 		d.Task["allowed_actions"] = actions
-		return obj{"task": d.Task, "runs": d.Runs, "events": d.Events}, ""
+		approvalID, _ := req["approval"].(string)
+		approval := d.Approvals[approvalID]
+		valid := approval != nil && approval["revision"] == d.Task["revision"] && approval["expires"].(float64) > float64(time.Now().Unix())
+		for _, run := range d.Runs {
+			delete(run, "approval")
+		}
+		for _, event := range d.Events {
+			publicEvent(event)
+		}
+		return obj{"task": d.Task, "runs": d.Runs, "events": d.Events, "approval_valid": valid}, ""
 	case "events":
 		cursor := float64(0)
 		if v, ok := req["cursor"]; ok {
@@ -190,6 +212,7 @@ func (s *service) request(req obj) (any, string) {
 		items := []obj{}
 		for _, e := range clone(s.data).Events {
 			if e["cursor"].(float64) > cursor {
+				publicEvent(e)
 				items = append(items, e)
 				if len(items) == 100 {
 					break
