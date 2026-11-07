@@ -88,6 +88,34 @@ class IdentifierTests(unittest.TestCase):
             CLI['main']()
         return request
 
+    def test_import_replay_checks_receipt_before_source(self):
+        for action, source in [('import-runtime', ['--source-url', 'http://127.0.0.1:4002', '--issue', 'TASK-1']),
+                               ('import-pr', ['--url', 'https://github.com/owner/repo/pull/1']),
+                               ('import-agent', ['--file', '/missing/reviewed.json'])]:
+            with self.subTest(action=action):
+                fetch = Mock(side_effect=AssertionError('Completed import must not fetch its source'))
+                with patch.dict(CLI['main'].__globals__, import_evidence=fetch):
+                    req = self.invoke(['tasks', action, 'fixture-1', '--key', 'replay', '--revision', '1', *source],
+                                      {'found': True, 'result': {'id': 'original'}})
+                self.assertEqual(req.call_count, 1)
+                payload = req.call_args.args[1]
+                self.assertEqual(payload['op'], 'import-receipt')
+                self.assertEqual(len(payload['import_intent']), 64)
+                fetch.assert_not_called()
+
+    def test_new_import_uses_same_identity_in_lookup_and_commit(self):
+        req = Mock(side_effect=[{'found': False}, {'id': 'receipt'}])
+        fetch = Mock(return_value={'op': 'evidence', 'provider': 'runtime_snapshot', 'reference': 'source', 'text': 'turn 1'})
+        args = ['symphonyctl', 'tasks', 'import-runtime', 'fixture-1', '--key', 'new', '--revision', '1',
+                '--source-url', 'http://127.0.0.1:4002', '--issue', 'TASK-1']
+        with patch.object(sys, 'argv', args), patch.dict(CLI['main'].__globals__, request=req, import_evidence=fetch), contextlib.redirect_stdout(io.StringIO()):
+            CLI['main']()
+        lookup, commit = [call.args[1] for call in req.call_args_list]
+        self.assertEqual(lookup['op'], 'import-receipt')
+        self.assertEqual(commit['op'], 'evidence')
+        self.assertEqual(lookup['import_intent'], commit['import_intent'])
+        fetch.assert_called_once()
+
     def test_stop_preserves_leading_hyphens_before_and_after_options(self):
         for identifier in ['-leading-run', '--leading-run']:
             for args in [['runs', 'stop', identifier, '--revision', '2'],

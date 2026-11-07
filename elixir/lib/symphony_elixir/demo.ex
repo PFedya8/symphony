@@ -21,7 +21,7 @@ defmodule SymphonyElixir.Demo do
   @spec command(map(), map()) :: {term(), map()}
   def command(req, state) do
     op = req["op"]
-    if op in ~w(snapshot capabilities events), do: read(req, state), else: mutate(req, state)
+    if op in ~w(snapshot capabilities events import-receipt), do: read(req, state), else: mutate(req, state)
   catch
     {:reject, code} -> {{:error, code}, state}
   end
@@ -30,6 +30,22 @@ defmodule SymphonyElixir.Demo do
     if run["state"] in @active,
       do: Map.merge(run, %{"state" => "interrupted", "exit_reason" => "owner_lost; reconciliation required"}),
       else: run
+  end
+
+  defp read(%{"op" => "import-receipt"} = req, state) do
+    require!(req["scope"] == "control", "forbidden")
+    require!(is_binary(req["key"]) and byte_size(req["key"]) in 1..100, "idempotency_key_required")
+    identity = import_identity(req)
+    require!(not is_nil(identity), "invalid_import_intent")
+
+    result =
+      case state.data["commands"][req["key"]] do
+        nil -> %{"found" => false}
+        %{"import_identity" => ^identity, "result" => result} -> %{"found" => true, "result" => result}
+        _ -> throw({:reject, "idempotency_conflict"})
+      end
+
+    {{:ok, result}, state}
   end
 
   defp read(%{"op" => "capabilities"}, state),
@@ -71,12 +87,26 @@ defmodule SymphonyElixir.Demo do
     require!(is_binary(key) and byte_size(key) in 1..100, "idempotency_key_required")
     fingerprint = :crypto.hash(:sha256, Jason.encode!(Map.drop(req, ["key"]))) |> Base.encode16()
 
+    identity = import_identity(req)
+
     case state.data["commands"][key] do
-      %{"fingerprint" => ^fingerprint, "result" => result} -> {{:ok, result}, state}
-      nil -> execute(req, fingerprint, state)
-      _ -> throw({:reject, "idempotency_conflict"})
+      nil ->
+        execute(req, fingerprint, state)
+
+      receipt ->
+        same_import = not is_nil(identity) and receipt["import_identity"] == identity
+        require!(receipt["fingerprint"] == fingerprint or same_import, "idempotency_conflict")
+        {{:ok, receipt["result"]}, state}
     end
   end
+
+  defp import_identity(%{"op" => op, "import_intent" => intent} = req) when op in ["evidence", "import-receipt"] do
+    require!(is_binary(intent) and Regex.match?(~r/\A[0-9a-f]{64}\z/, intent), "invalid_import_intent")
+    context = [intent, req["task_id"], req["run_id"], req["revision"], req["actor"] || "operator"]
+    :crypto.hash(:sha256, Jason.encode!(context)) |> Base.encode16()
+  end
+
+  defp import_identity(_), do: nil
 
   defp execute(req, fingerprint, state) do
     task_id = request_task_id(req, state.data)
@@ -85,7 +115,7 @@ defmodule SymphonyElixir.Demo do
     require!(req["revision"] == revision, "stale_revision")
     require!(map_size(state.data["commands"]) < 1000, "demo_history_full")
     {result, data, effect} = transition(req, Map.put(state.data, "task", task))
-    data = put_in(data["commands"][req["key"]], %{"fingerprint" => fingerprint, "result" => result})
+    data = put_in(data["commands"][req["key"]], %{"fingerprint" => fingerprint, "result" => result, "import_identity" => import_identity(req)})
     before_revision = if req["op"] == "create", do: nil, else: task["revision"]
     data = audit(data, req["op"], req["actor"] || "operator", before_revision, result)
     data = unscoped(data)

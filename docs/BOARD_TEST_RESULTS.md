@@ -19,10 +19,10 @@ real agent execution, external write or deployment was added.
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 326 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 328 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
-| Python CLI regression suite | 17 tests passed, including local HTTP argument checks and board command payloads |
+| Python CLI regression suite | 19 tests passed, including local HTTP argument checks and board command payloads |
 | HTTP/CLI/restart smoke | Passed against a fresh isolated database on port 4001 |
 | Desktop Chromium | Nine columns, drag/drop with persisted counts, project filter, expanded detail navigation, start/stop/hold/retry, plan edit/check, evidence link and activity disclosure passed |
 | Mobile-sized Chromium (390 × 844) | Cross-browser persisted state, board/detail views, task creation and stage move passed |
@@ -159,3 +159,19 @@ New actual screenshots:
 The first full gate attempt hit an existing core retry-timer test's five-second
 `:sys.get_state` timeout. That unchanged test passed immediately in isolation;
 the full gate then passed without weakening the test or quality checks.
+
+## Import replay recovery
+
+The independent failure reproduced before the fix: repeating a successful
+runtime import with the same key/revision after its source turn count changed
+returned `idempotency_conflict`. The regression now passes through the actual CLI
+and HTTP control API: changed, unavailable and removed sources all replay the
+original receipt, with exactly one source read and one report/revision write.
+
+Service tests also cover concurrent differing observations, restart recovery,
+actor/task/revision/source mismatch conflicts, invalid lookup requests, and
+refusal to expose preview capabilities or infer identities for legacy receipts.
+Python tests cover receipt-first ordering for runtime, GitHub and file imports
+and matching identity propagation from lookup to commit. Historical imports
+without source identities retain their strict old semantics and fail closed on
+lookup; the guide explains safe manual reconciliation.

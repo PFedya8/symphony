@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Thin HTTP client. No task database or scheduling logic."""
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -165,8 +166,20 @@ def main():
         if args.action in ('import-agent', 'import-pr', 'import-runtime'):
             if args.dry_run:
                 parser.error('imports do not support --dry-run; inspect the source before importing')
-            payload.update(import_evidence(args))
-        result = request('commands', payload)
+            if args.group != 'tasks' or not args.id:
+                parser.error('imports require an explicit tasks ID')
+            source = {'action': args.action, 'url': args.url, 'source_url': args.source_url, 'issue': args.issue,
+                      'file': os.path.abspath(args.file) if args.file else None}
+            payload['import_intent'] = hashlib.sha256(json.dumps(source, sort_keys=True).encode()).hexdigest()
+            lookup = {**payload, 'op': 'import-receipt'}
+            receipt = request('commands', lookup)
+            if receipt.get('found'):
+                result = receipt['result']
+            else:
+                payload.update(import_evidence(args))
+                result = request('commands', payload)
+        else:
+            result = request('commands', payload)
     elif args.action in ['list', 'show', 'history', 'logs']:
         cursor = 0
         while True:

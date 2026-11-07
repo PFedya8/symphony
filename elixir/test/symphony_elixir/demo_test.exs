@@ -627,4 +627,58 @@ defmodule SymphonyElixir.DemoTest do
       assert task["reports"] == []
     end
   end
+
+  test "import receipts replay across changed evidence, actor boundaries and restart without duplicate writes" do
+    intent = String.duplicate("a", 64)
+    base = %{"key" => "import-recovery", "task_id" => "fixture-1", "revision" => 1, "scope" => "control", "actor" => "operator", "import_intent" => intent}
+    lookup = Map.put(base, "op", "import-receipt")
+    assert {:ok, %{"found" => false}} = request(lookup)
+    assert snapshot()["events"] == []
+    evidence = Map.merge(base, %{"op" => "evidence", "provider" => "runtime_snapshot", "reference" => "http://127.0.0.1:4002/api/v1/TASK-1", "text" => "turn count 1"})
+    assert {:ok, result} = request(evidence)
+    assert {:ok, ^result} = request(Map.put(evidence, "text", "turn count 9"))
+    assert {:ok, %{"found" => true, "result" => ^result}} = request(lookup)
+    assert snapshot()["task"]["revision"] == 2
+    assert length(snapshot()["task"]["reports"]) == 1
+    assert length(snapshot()["events"]) == 1
+
+    for changed <- [%{"task_id" => "fixture-2"}, %{"revision" => 2}, %{"actor" => "other"}, %{"import_intent" => String.duplicate("b", 64)}] do
+      assert {:error, "idempotency_conflict"} = request(Map.merge(lookup, changed))
+      assert {:error, "idempotency_conflict"} = request(Map.merge(evidence, changed))
+    end
+
+    :ok = stop_supervised(SymphonyElixir.AgentRuntimeSupervisor)
+    start_runtime()
+    assert {:ok, %{"found" => true, "result" => ^result}} = request(lookup)
+    assert length(snapshot()["task"]["reports"]) == 1
+    assert {:error, "forbidden"} = request(Map.put(lookup, "scope", "read"))
+    assert {:error, "idempotency_key_required"} = request(Map.delete(lookup, "key"))
+    assert {:error, "invalid_import_intent"} = request(Map.delete(lookup, "import_intent"))
+    assert {:error, "invalid_import_intent"} = request(Map.put(lookup, "import_intent", "bad"))
+    assert {:ok, _} = command("preview", %{"key" => "private-preview"})
+    assert {:error, "idempotency_conflict"} = request(Map.put(lookup, "key", "private-preview"))
+    assert {:ok, _} = command("evidence", %{"key" => "legacy-import", "provider" => "agent_artifact", "reference" => "legacy", "text" => "No import identity"})
+    assert {:error, "idempotency_conflict"} = request(Map.put(lookup, "key", "legacy-import"))
+  end
+
+  test "concurrent import fetches commit one receipt" do
+    base = %{
+      "op" => "evidence",
+      "key" => "import-race",
+      "scope" => "control",
+      "task_id" => "fixture-1",
+      "revision" => 1,
+      "import_intent" => String.duplicate("c", 64),
+      "provider" => "runtime_snapshot",
+      "reference" => "same source"
+    }
+
+    results = for text <- ["first observation", "second observation"], do: Task.async(fn -> request(Map.put(base, "text", text)) end)
+    [first, second] = Enum.map(results, &Task.await/1)
+    assert {:ok, result} = first
+    assert second == first
+    assert result["text"] in ["first observation", "second observation"]
+    assert length(snapshot()["task"]["reports"]) == 1
+    assert snapshot()["task"]["revision"] == 2
+  end
 end

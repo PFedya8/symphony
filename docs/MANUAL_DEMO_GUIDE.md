@@ -342,3 +342,38 @@ fixture with the same environment variables as the earlier browser scripts.
 It verifies nested sections, comments/replies, CLI/UI consistency, agent-artifact
 import and opt-in embed boundaries. It blocks video traffic deliberately and
 therefore does **not** verify provider playback.
+
+### Recovering an import after a lost response
+
+Choose and retain an explicit `--key` before the first import. Retry with the
+same task, original revision, key and source arguments. The CLI first checks
+`import-receipt` through the authenticated command API. If the import already
+committed, it returns the stored receipt without opening the artifact file or
+contacting GitHub/the runtime. This works when the source changed or disappeared.
+A changed source observation requires a **new key and current task revision**.
+Without explicit `--key`, each CLI invocation still generates a new UUID.
+
+The server binds an import receipt to the source intent, task/run context,
+original revision and authenticated actor. If concurrent source reads produce
+different evidence under the same identity, the first committed report wins;
+both callers get that receipt, with one revision increment and one activity event.
+Different identities reusing a key conflict. Receipt reads themselves do not
+write events, consume history capacity or reveal non-import/approval receipts.
+The receipt and identity survive restart in SQLite; no local CLI cache is needed.
+
+For API clients, `import_intent` is a 64-character lowercase SHA-256 digest of
+the stable source selection. Send it with `op=evidence`, task/revision/key. Query
+`op=import-receipt` with the same context before fetching; it returns `found=false`
+or `found=true` with the original result. The server supplies the actor from
+authentication. Direct evidence requests without `import_intent` retain strict
+full-payload idempotency. Use a new identity/key for a genuinely new observation.
+
+Receipts created before this change lack a source identity. Lookup fails closed
+with `idempotency_conflict` for those keys; it neither guesses a match nor imports
+again. Inspect existing task reports/history and reconcile the receipt manually.
+Do not switch to a new key merely to bypass an uncertain earlier outcome.
+
+Regression: `python3 scripts/check_import_replay.py` against a disposable local
+fixture runs the real CLI against a mutable local HTTP source, then changes,
+disables and removes that source. It asserts one source read, one stored report,
+one revision increment and identical replayed receipts.
