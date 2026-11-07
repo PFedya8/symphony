@@ -19,13 +19,16 @@ real agent execution, external write or deployment was added.
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 317 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 320 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
 | Python CLI regression suite | 12 tests passed, including local HTTP argument checks and board command payloads |
 | HTTP/CLI/restart smoke | Passed against a fresh isolated database on port 4001 |
 | Desktop Chromium | Six columns/cards, project filter, detail navigation, start/stop/hold/retry, plan edit/check, evidence link and activity disclosure passed |
 | Mobile-sized Chromium (390 × 844) | Cross-browser persisted state, board/detail views, task creation and stage move passed |
+| Concurrent Chromium clients | Stale plan rejected; draft and original revision preserved; explicit reload and reviewed save passed |
+| Mobile failure feedback | Invalid plan, invalid link and ineligible run alerts visible inside the active panel; viewport and occlusion checks passed |
+| Reserved project name | Literal `all` shows only its project; All projects restores every card |
 | Browser runtime errors | None observed |
 | Diff whitespace | Passed |
 
@@ -68,11 +71,21 @@ persisted state, creates another task and moves it to Todo.
 - [Mobile board](screenshots/board/03-board-mobile.png)
 - [Mobile detail](screenshots/board/04-task-mobile.png)
 - [Mobile evidence/activity](screenshots/board/05-evidence-mobile.png)
+- [Mobile stale draft conflict](screenshots/board/06-mobile-stale-draft.png)
+- [Mobile invalid link feedback](screenshots/board/07-mobile-invalid-link.png)
 
 These are browser captures, not designs or mockups. They contain only synthetic
 tasks and an explicitly supplied repository PR link. No login token appears.
-The screenshots show the current board; older single-task screenshots remain
+The first five captures show the initial board; the last two capture the
+concurrent-edit and mobile-feedback fixes. Older single-task screenshots remain
 historical evidence in `screenshots/manual-demo`.
+
+The concurrency regressions first failed against the earlier board implementation.
+Two independent LiveView clients now verify that a stale submitted form cannot
+overwrite another client, including after a broadcast updates its surrounding UI.
+The actual Chromium regression (`scripts/check_board_conflicts.cjs`) additionally
+verifies that editing disclosures stay open, drafts survive DOM patches, explicit
+reload takes effect, and mobile errors are not obscured by the full-screen panel.
 
 ## Limits and remaining work
 

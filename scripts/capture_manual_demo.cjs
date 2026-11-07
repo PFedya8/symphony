@@ -22,7 +22,7 @@ const path = require('node:path');
     await page.screenshot({path:path.join(out,'01-board-desktop.png'),fullPage:true});
     await page.getByLabel('Project',{exact:true}).first().selectOption('sandbox');
     await page.waitForFunction(()=>document.querySelectorAll('.task-card').length===1);
-    await page.getByLabel('Project',{exact:true}).first().selectOption('all');
+    await page.getByLabel('Project',{exact:true}).first().selectOption('');
     await page.waitForFunction(()=>document.querySelectorAll('.task-card').length===6);
     await page.locator('#card-fixture-1').click();
     await page.locator('.task-detail').waitFor();

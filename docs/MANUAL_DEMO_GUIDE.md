@@ -210,3 +210,23 @@ installed browser; `SYMPHONY_SCREENSHOTS` selects the output directory.
 
 See [the board test report](BOARD_TEST_RESULTS.md) for results and limitations.
 The older `screenshots/manual-demo` directory documents the superseded single-task UI.
+
+### Concurrent editing and visible errors
+
+Starting an edit pins that form to the revision you saw. Live updates continue,
+but do not replace your draft or silently advance its revision. If another client
+saves first, your save reports a conflict without overwriting their change. Copy
+any text you want to keep, then choose **Reload current data (discard draft)**,
+review the current data and submit a new edit. This applies to plan, stage and
+link forms; task creation checks the board revision. Open editing sections stay
+open during live updates.
+
+Errors appear inside the active task panel, with an assertive alert and sticky
+placement on small screens. Invalid plans, unsafe links and ineligible run
+requests leave state unchanged. A project literally named `all` is supported;
+**All projects** is a separate filter choice.
+
+Run `node scripts/check_board_conflicts.cjs` against a separate fresh disposable
+local database using the same token/browser environment variables as the capture
+script. It exercises two actual browsers, stale plan rejection and recovery,
+visible mobile plan/link/run failures, and the literal `all` project filter.

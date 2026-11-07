@@ -398,7 +398,7 @@ defmodule SymphonyElixir.DemoTest do
     board |> form("#move-task", %{stage: "Todo"}) |> render_submit()
     board |> form("#edit-plan", %{text: "Review constraints\nVerify browser behavior"}) |> render_submit()
     board |> element("button[phx-click=check][phx-value-step='0']") |> render_click()
-    assert render_click(board, "check", %{"step" => "bad", "completed" => "true"}) =~ "invalid_step"
+    assert render_click(board, "check", %{"step" => "bad", "completed" => "true", "revision" => 4}) =~ "invalid_step"
     board |> form("#add-link", %{kind: "walkthrough", title: "Demo guide", url: "https://example.com/guide"}) |> render_submit()
     assert has_element?(board, "a[href='https://example.com/guide']")
     cli = Path.expand("../cli/symphonyctl")
@@ -429,5 +429,71 @@ defmodule SymphonyElixir.DemoTest do
     assert {:error, "link_limit"} = board_command("fixture-1", "link", %{"kind" => "walkthrough", "url" => "https://example.com/overflow", "title" => "Overflow"})
     assert length(snapshot()["task"]["links"]) == 10
     assert {:error, "invalid_plan"} = board_command("fixture-1", "plan", %{"text" => Enum.map_join(1..21, "\n", &"Step #{&1}")})
+  end
+
+  defp board_connection do
+    token = String.duplicate("concurrency-fixture-", 3)
+    Application.put_env(:symphony_elixir, :demo_token, token)
+    Application.put_env(:symphony_elixir, :demo_server, DemoOwner)
+    endpoint_config = Application.get_env(:symphony_elixir, @endpoint)
+
+    on_exit(fn ->
+      Application.delete_env(:symphony_elixir, :demo_token)
+      Application.delete_env(:symphony_elixir, :demo_server)
+      Application.put_env(:symphony_elixir, @endpoint, endpoint_config)
+    end)
+
+    start_supervised!({SymphonyElixir.HttpServer, port: 0, host: "127.0.0.1"})
+    Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
+  end
+
+  test "two clients cannot overwrite a newer plan with an old submitted revision" do
+    conn = board_connection()
+    {:ok, first, _} = live(conn, "/tasks?task=fixture-1")
+    {:ok, second, _} = live(conn, "/tasks?task=fixture-1")
+    render_focus(first, "begin-draft", %{"form" => "plan", "revision" => "1", "task_id" => "fixture-1"})
+    first |> form("#edit-plan", %{text: "First client old draft"}) |> render_change()
+    second |> form("#edit-plan", %{text: "Second client plan"}) |> render_submit()
+    eventually(fn -> render(first) =~ "Revision 2" end)
+    assert has_element?(first, "#edit-plan input[name=revision][value='1']")
+    assert has_element?(first, "#edit-plan textarea", "First client old draft")
+    first |> form("#edit-plan") |> render_submit()
+    assert has_element?(first, ".task-detail [role=alert][aria-live=assertive][data-error=stale_revision]")
+    assert has_element?(first, "#edit-plan textarea", "First client old draft")
+    assert hd(snapshot()["task"]["plan"])["text"] == "Second client plan"
+    first |> element("button[phx-click=reload-draft][phx-value-form=plan]") |> render_click()
+    assert has_element?(first, "#edit-plan input[name=revision][value='2']")
+    assert has_element?(first, "#edit-plan textarea", "Second client plan")
+    first |> form("#edit-plan", %{text: "Reviewed replacement"}) |> render_submit()
+    assert hd(snapshot()["task"]["plan"])["text"] == "Reviewed replacement"
+  end
+
+  test "a project named all is distinct from the all-projects filter" do
+    {:ok, task} = board_command("fixture-1", "create", %{"title" => "Reserved-name task", "project" => "all"})
+    conn = board_connection()
+    {:ok, board, _} = live(conn, "/tasks?project=all")
+    assert has_element?(board, "#card-" <> task["id"])
+    refute has_element?(board, "#card-fixture-1")
+    render_change(board, "filter", %{"project" => ""})
+    assert has_element?(board, "#card-fixture-1")
+    assert has_element?(board, "#card-" <> task["id"])
+  end
+
+  test "invalid plan, link and run feedback is inside the active detail panel" do
+    {:ok, view, _} = live(board_connection(), "/tasks?task=fixture-1")
+    view |> form("#edit-plan", %{text: String.duplicate("x", 161)}) |> render_submit()
+    assert has_element?(view, ".task-detail [role=alert][data-error=invalid_plan]")
+    view |> form("#add-link", %{title: "Invalid HTTP link", kind: "walkthrough", url: "http://example.com"}) |> render_submit()
+    assert has_element?(view, ".task-detail [role=alert][data-error=invalid_url]")
+    render_click(view, "start", %{"revision" => "1", "task_id" => "fixture-1"})
+    assert has_element?(view, ".task-detail [role=alert][data-error=approval_required]")
+    assert snapshot()["runs"] == []
+    render_submit(view, "plan", %{"text" => "Missing revision"})
+    assert has_element?(view, ".task-detail [role=alert][data-error=stale_revision]")
+    render_submit(view, "plan", %{"text" => "Bad revision", "revision" => "invalid"})
+    assert has_element?(view, ".task-detail [role=alert][data-error=stale_revision]")
+    render_submit(view, "plan", %{"text" => "Wrong task", "revision" => 1, "task_id" => "fixture-2"})
+    assert has_element?(view, ".task-detail [role=alert][data-error=stale_selection]")
+    assert snapshot()["task"]["revision"] == 1
   end
 end

@@ -535,3 +535,5 @@ body:has(.work-board) { background: #f5f6fa; color: #243044; }
 .activity-event summary time { display:block; font-size:10px; color:#a0a7b4; padding:4px 0 0 16px; }
 .board-error { background:#fff0ed; color:#b25749; border:1px solid #f3d1cb; padding:12px; border-radius:7px; }
 @media (max-width:700px) { .app-shell:has(.work-board) { padding:18px 14px; } .board-header { align-items:flex-start; } .board-header h1 { font-size:25px; } .fixture-label { font-size:9px; padding:7px; } .board-toolbar { flex-wrap:wrap; gap:12px; } .board-toolbar > span { display:none; } .board-columns { grid-template-columns:repeat(6,235px); gap:10px; } .task-detail { padding:22px 20px; } .new-task form { width:min(290px,calc(100vw - 55px)); } }
+.task-detail > .board-error { position:sticky; top:0; z-index:12; box-shadow:0 3px 12px #44251c12; }
+.work-board button[phx-click="reload-draft"] { background:transparent; color:#6f6598; border-color:#e4dfef; margin-top:8px; }
