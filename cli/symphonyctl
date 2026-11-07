@@ -3,24 +3,11 @@
 import argparse
 import json
 import os
-import re
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
-
-
-class IdentifierArgumentParser(argparse.ArgumentParser):
-    """Treat backend-generated URL-safe IDs as values, even with a '-' prefix."""
-
-    def _parse_optional(self, arg_string):
-        # Both backends encode 18 random bytes as 24 unpadded URL-safe characters.
-        # This covers run IDs, approvals and keys without renaming persisted IDs.
-        # Other unknown options still use argparse's normal error handling.
-        if re.fullmatch(r"-[A-Za-z0-9_-]{23}", arg_string):
-            return None
-        return super()._parse_optional(arg_string)
 
 
 def request(path, payload=None):
@@ -33,8 +20,42 @@ def request(path, payload=None):
         return json.load(response)
 
 
+def normalize_identifier(argv):
+    """Keep opaque IDs literal and options intact across Python 3.11+ argparse.
+
+    PR #2's opaque-ID normalization is extended to put options before all
+    positionals, avoiding Python 3.11's optional-positional/terminator ambiguity.
+    Bind option values with '=' so leading-hyphen approval/key values stay literal.
+    """
+    value_options = {'--approval', '--revision', '--key', '--reason'}
+    flags = {'--json', '--dry-run', '--follow', '-h', '--help'}
+    options, positionals = [], []
+    literal = False
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if literal:
+            positionals.append(arg)
+        elif arg == '--':
+            literal = True
+        elif arg in value_options:
+            if index + 1 < len(argv) and argv[index + 1] not in value_options | flags | {'--'}:
+                options.append(arg + '=' + argv[index + 1])
+                index += 1
+            else:
+                options.append(arg)  # argparse reports the missing value
+        elif arg in flags or any(arg.startswith(option + '=') for option in value_options | flags):
+            options.append(arg)
+        elif arg.startswith('-') and len(positionals) != 2:
+            options.append(arg)  # unknown option before a command or after its ID
+        else:
+            positionals.append(arg)
+        index += 1
+    return options + ['--'] + positionals
+
+
 def main():
-    parser = IdentifierArgumentParser()
+    parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('group', choices=['capabilities', 'sync', 'tasks', 'runs'])
     parser.add_argument('action', nargs='?', default='list')
     parser.add_argument('id', nargs='?')
@@ -45,7 +66,7 @@ def main():
     parser.add_argument('--key', default=str(uuid.uuid4()))
     parser.add_argument('--reason')
     parser.add_argument('--follow', action='store_true')
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_identifier(sys.argv[1:]))
     if args.reason:
         parser.error('--reason text persistence is not supported by the fixed-output fixture demo')
     if args.group == 'capabilities':

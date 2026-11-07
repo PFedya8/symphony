@@ -102,13 +102,25 @@ class IdentifierTests(unittest.TestCase):
             server.server_close()
             thread.join()
 
+    def test_global_flags_and_opaque_approval_values(self):
+        calls, _ = self.invoke(["--json", "runs", "stop", "-run", "--revision", "2"], lambda path, payload: payload)
+        self.assertEqual(calls[0].args[1]["run_id"], "-run")
+        calls, _ = self.invoke(["runs", "retry", "-run", "--revision", "2", "--approval", "-preview", "--key", "--opaque-key"], lambda path, payload: payload)
+        self.assertEqual(calls[0].args[1]["approval"], "-preview")
+        self.assertEqual(calls[0].args[1]["key"], "--opaque-key")
+
     def test_existing_ids_options_and_explicit_terminator(self):
-        for args in (["runs", "stop", "normal-id", "--revision", "2"], ["--revision", "2", "runs", "stop", "--", "-legacy-id"]):
+        cases = [
+            (["runs", "stop", "normal-id", "--revision", "2"], "normal-id"),
+            (["--revision", "2", "runs", "stop", "--", "-legacy-id"], "-legacy-id"),
+            (["runs", "stop", "--revision", "2", "--", "--json"], "--json"),
+        ]
+        for args, identifier in cases:
             calls, _ = self.invoke(args, lambda path, payload: payload)
-            self.assertEqual(calls[0].args[1]["run_id"], "normal-id" if args[2] == "normal-id" else "-legacy-id")
+            self.assertEqual(calls[0].args[1]["run_id"], identifier)
 
     def test_unknown_options_still_fail_before_request(self):
-        with patch.object(sys, "argv", ["symphonyctl", "runs", "list", "--typo"]), patch.object(cli, "request") as request, contextlib.redirect_stderr(io.StringIO()):
+        with patch.object(sys, "argv", ["symphonyctl", "runs", "list", "known-id", "--typo"]), patch.object(cli, "request") as request, contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as result:
                 cli.main()
             self.assertEqual(result.exception.code, 2)

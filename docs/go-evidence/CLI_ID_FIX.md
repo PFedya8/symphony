@@ -1,5 +1,9 @@
 # Leading-hyphen CLI identifier regression
 
+Historical evidence for the initial fix at `748fbbe`. The generalized coordinated
+fix is documented in `cli/README.md` and `docs/PR2_COMPATIBILITY.md`; it supersedes
+the format-specific parser described below.
+
 Both backends generate IDs by URL-safe encoding 18 random bytes. A valid ID may
 begin with `-` or `--`. The original argparse parser mistook those positional IDs
 for options; generated approval IDs had the same problem as option values.
