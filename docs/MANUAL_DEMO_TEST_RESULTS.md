@@ -14,7 +14,7 @@ Playwright and a temporary loopback-only relay into the container.
 | Check | Observed result |
 | --- | --- |
 | Targeted demo, GitLab adapter and redirect tests | 22 passed, 0 failures |
-| Full ExUnit suite | 310 tests, 0 failures, 6 opt-in live tests skipped |
+| Full ExUnit suite | 311 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100%, using existing repository exclusions |
 | Full `make all` gate | Passed (exit 0), including Dialyzer with zero errors |
 | Format, specs and strict Credo | Passed; no lint issues |
@@ -70,3 +70,25 @@ Mobile screenshots were recaptured after the fix. Browser automation also opens
 and closes an event disclosure and checks that stale retry controls are absent.
 The smoke probe now tolerates TIME_WAIT after cleanup while still rejecting an
 active listener; a repeat run and active-listener refusal were verified.
+
+## Cross-client preview regression
+
+A two-LiveView test reproduced replacement at the same task revision: client A
+retained its start button after B requested a new preview. The service now checks
+A's own capability during snapshot refresh and returns only `approval_valid`.
+Snapshots and event pages remove preview IDs and run approval credentials from
+shared history, including previously persisted records. PubSub still broadcasts
+only `:demo_updated`; it never distributes a capability.
+
+The regression asserts A loses the control, B retains a usable approval, A's old
+approval is rejected, and neither client's capability appears in shared snapshots,
+event pages or the other client's rendered page. The test uses two independently
+mounted LiveView processes, not a manually fabricated socket.
+
+A randomized test run also generated an ID beginning with `--`. The shared CLI
+now normalizes opaque leading-hyphen positional IDs before argparse, preserving
+their exact value and existing options. Six transport-free regression tests cover
+single/double hyphens, options before/after IDs, explicit separators, retry/read
+commands, normal flags, missing revision and unknown extra options. Run them with
+`python3 scripts/test_symphonyctl.py`. The real HTTP parity test retains its original
+ID-before-options command syntax.

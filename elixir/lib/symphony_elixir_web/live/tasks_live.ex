@@ -46,14 +46,9 @@ defmodule SymphonyElixirWeb.TasksLive do
   end
 
   defp refresh(socket) do
-    {:ok, payload} = Service.request(%{"op" => "snapshot"})
     approval = socket.assigns.approval
-
-    approval =
-      if approval && approval["revision"] == payload["task"]["revision"] &&
-           approval["expires"] > System.system_time(:second),
-         do: approval,
-         else: nil
+    {:ok, payload} = Service.request(%{"op" => "snapshot", "approval" => approval && approval["id"]})
+    approval = if payload["approval_valid"], do: approval, else: nil
 
     assign(socket, payload: payload, approval: approval)
   end

@@ -69,7 +69,8 @@ causes an idempotency conflict. A new intentional attempt uses `runs retry`, a
 fresh preview/current revision, and a new key. A stale revision under a new key
 is rejected. Approvals
 are revision-bound and expire after two minutes. Browser Basic Auth is rejected
-for API mutations; the CLI uses a bearer token.
+for API mutations; the CLI uses a bearer token. Opaque run IDs beginning with
+`-` are accepted unchanged in commands such as `runs stop -run --revision 2`.
 
 ## Reproduce verification
 
@@ -84,6 +85,7 @@ mix test test/symphony_elixir/demo_test.exs
 make all
 cd ..
 python3 scripts/check_manual_demo.py
+python3 scripts/test_symphonyctl.py
 ```
 
 The ExUnit suite covers lifecycle, concurrency/idempotency, worker loss, restart,
@@ -207,6 +209,9 @@ with existing runs, but it does mutate the fresh fixture it is given. Screenshot
 contain synthetic approval/run IDs and events, never the authentication token.
 
 Previews and approval controls are cleared when the task revision changes,
-including changes from another client, or when the preview expires. Obtain a
+including changes from another client, when another preview replaces the approval
+at the same revision, or when the preview expires. Each refresh checks only the
+client's own approval with the service; shared snapshots/history omit approval
+credentials. The validity response is a boolean, never another client's token. Obtain a
 fresh preview after releasing hold. History and simulation evidence are collapsed
 behind expandable summaries so raw JSON does not overwhelm the mobile page.

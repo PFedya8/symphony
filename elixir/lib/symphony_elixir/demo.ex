@@ -53,15 +53,28 @@ defmodule SymphonyElixir.Demo do
   defp read(%{"op" => "events"} = req, state) do
     cursor = req["cursor"] || 0
     require!(is_integer(cursor) and cursor >= 0, "invalid_cursor")
-    events = Enum.filter(state.data["events"], &(&1["cursor"] > cursor)) |> Enum.take(100)
+    events = Enum.filter(state.data["events"], &(&1["cursor"] > cursor)) |> Enum.take(100) |> Enum.map(&public_event/1)
     {{:ok, %{"items" => events, "cursor" => if(events == [], do: cursor, else: List.last(events)["cursor"])}}, state}
   end
 
-  defp read(_, state) do
+  defp read(req, state) do
     task = state.data["task"]
     actions = if task["hold"], do: ["release-hold"], else: ["preview", "hold"]
-    {{:ok, %{"task" => Map.put(task, "allowed_actions", actions), "runs" => state.data["runs"], "events" => state.data["events"]}}, state}
+    approval = state.data["approvals"][req["approval"]]
+    valid = approval != nil and approval["revision"] == task["revision"] and approval["expires"] > System.system_time(:second)
+
+    {{:ok,
+      %{
+        "task" => Map.put(task, "allowed_actions", actions),
+        "runs" => Enum.map(state.data["runs"], &Map.delete(&1, "approval")),
+        "events" => Enum.map(state.data["events"], &public_event/1),
+        "approval_valid" => valid
+      }}, state}
   end
+
+  # Shared history must not disclose the private capability returned to the preview caller.
+  defp public_event(%{"op" => "preview"} = event), do: update_in(event["result"], &Map.delete(&1, "id"))
+  defp public_event(event), do: update_in(event["result"], &Map.delete(&1, "approval"))
 
   defp mutate(req, state) do
     require!(req["scope"] == "control", "forbidden")
