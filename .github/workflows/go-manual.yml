@@ -24,5 +24,8 @@ jobs:
           test -z "$(gofmt -l *.go)"
           go vet ./...
           go test -race -cover ./...
+      - name: Shared CLI regression tests
+        working-directory: .
+        run: python3 -m unittest discover -s cli -p 'test_*.py'
       - name: Build
         run: go build -buildvcs=false -o "$RUNNER_TEMP/go-manual" .

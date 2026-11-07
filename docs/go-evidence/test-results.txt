@@ -54,3 +54,11 @@ Startup-error follow-up:
   actual bound-port readiness, authenticated API access, and clean SIGTERM exit.
   Full Go race suite passed; 89.8% statement coverage; vet/build/format passed.
   Elixir and UI unchanged; resource benchmark not rerun.
+
+Shared CLI identifier follow-up:
+  Deterministically reproduced 14 pre-fix parser-error subcases for generated IDs
+  beginning with one or two hyphens.
+  Six CLI regression tests passed on Python 3.11, 3.12 and 3.13, including real
+  subprocess HTTP transport; shared contract passed against Go and Elixir.
+  Full Elixir suite: 312 tests, 0 failures, 6 skipped.
+  CLI regression suite added to the Go CI workflow.

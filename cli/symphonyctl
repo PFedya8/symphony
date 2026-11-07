@@ -3,11 +3,24 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+
+
+class IdentifierArgumentParser(argparse.ArgumentParser):
+    """Treat backend-generated URL-safe IDs as values, even with a '-' prefix."""
+
+    def _parse_optional(self, arg_string):
+        # Both backends encode 18 random bytes as 24 unpadded URL-safe characters.
+        # This covers run IDs, approvals and keys without renaming persisted IDs.
+        # Other unknown options still use argparse's normal error handling.
+        if re.fullmatch(r"-[A-Za-z0-9_-]{23}", arg_string):
+            return None
+        return super()._parse_optional(arg_string)
 
 
 def request(path, payload=None):
@@ -21,7 +34,7 @@ def request(path, payload=None):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = IdentifierArgumentParser()
     parser.add_argument('group', choices=['capabilities', 'sync', 'tasks', 'runs'])
     parser.add_argument('action', nargs='?', default='list')
     parser.add_argument('id', nargs='?')
