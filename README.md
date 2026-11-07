@@ -63,3 +63,8 @@ imports of reviewed agent artifacts, existing local runtime observations and
 GitHub PR API evidence. Imports retain provenance and do not claim a verified
 merge or change execution state. See the manual demo guide for schema-3 backup,
 provider boundaries, CLI commands and the remaining video-parity gaps.
+
+The [opt-in GitLab runtime board](docs/MANUAL_DEMO_GUIDE.md#opt-in-gitlab-runtime-board)
+connects automatic issue discovery to the existing Symphony worker lifecycle with
+explicit approval per attempt. Synthetic integration tests cover this path; live
+provider execution and automatic PR/merge synchronization are not claimed.

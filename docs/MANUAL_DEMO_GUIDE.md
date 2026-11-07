@@ -1,13 +1,14 @@
 # Symphony board: operator guide
 
 This is an original Symphony board informed by the workflow shown in the README
-video. It is **not Linear, a Linear clone, or a connected production agent system**.
+video. It supports the default synthetic fixture and a separate opt-in GitLab
+runtime mode described below. Live production integration has not been validated.
 The interface is functional: board edits, plans, checklists, links, approvals,
 runs and history share one durable backend with the CLI.
 
 ## What works
 
-- Six columns: **Backlog, Todo, In Progress, Human Review, Merging, Done**.
+- Nine columns: **Backlog, Todo, In Progress, Human Review, Merging, Done, Rework, Canceled, Duplicate**.
 - Multiple tasks, project filtering, new tasks and direct task-detail links.
 - Editable plans/checklists, task activity and links to existing PRs/walkthroughs.
 - Preview, explicitly approved start, stop/hold and retry of the fixed simulator.
@@ -136,11 +137,11 @@ Stop with Ctrl-C; restart with the same database and token to retain state.
 Unknown active work is marked interrupted after restart, never automatically
 replayed. The existing orchestrator owns workers; no second scheduler was added.
 
-**Database format is now version 3.** On opening a version-1 single-task database,
+**Database format is now version 4.** On opening a version-1 single-task database,
 the launcher preserves its task/runs/history and adds board fields. It does not
 inject six new sample tasks into an existing database. Old approvals are cleared.
 Before upgrading, stop the old process and copy its database and any journal as a
-private backup. Old binaries reject version 3; rollback requires the old backup.
+private backup. Old binaries reject version 4; rollback requires the old backup.
 Do not restore or copy over a live database. Unknown versions fail closed.
 
 Limits: 100 tasks, 20 checklist steps (160 bytes each), 10 links per task, three
@@ -152,16 +153,16 @@ private database for a new demonstration rather than deleting live state.
 Project selection is **organizational filtering, not tenant authorization**.
 Every authenticated operator of an instance can see/control all its projects.
 For unrelated projects needing access isolation, use separate processes, private
-databases and tokens, distinct local ports, and (for future real integration)
+databases and tokens, distinct local ports, and (for runtime integration)
 separate workspace roots and least-privilege tracker credentials. Never share a
 SQLite file between processes. No credentials or external accounts were added.
 
 ## Integrations and verified limits
 
 The repository has Linear, GitHub, GitLab, Jira, Asana and memory tracker adapters.
-This board deliberately runs the **fixture** lifecycle; it does not import issues
-or trigger those real adapters. Existing provider adapters are not automatically
-multi-project sources for this board. Google Calendar and Google Tasks are absent.
+The default board runs the **fixture** lifecycle. The opt-in GitLab runtime mode
+below discovers source issues and dispatches approved real workers. Other adapters
+are not automatically multi-project sources for this board. Google Calendar and Google Tasks are absent.
 
 GitLab's existing real adapter polls one configured `project_path` in pages of
 100, refreshes issue IIDs and normalizes identifiers to `GL-<iid>`. It maps
@@ -333,7 +334,7 @@ reviewing its tests or merge status.
 
 This increment writes snapshot schema **3**. Versions 1 and 2 gain empty authored
 updates/comments/reports while preserving their tasks. Stop the instance and
-back up SQLite before upgrading. Older binaries refuse schema 3; rollback needs
+back up SQLite before upgrading. Older binaries refuse schema 4; rollback needs
 the pre-upgrade database backup. Separate project instances still require their
 own token, database, workspace and authorized provider credentials.
 
@@ -377,3 +378,81 @@ Regression: `python3 scripts/check_import_replay.py` against a disposable local
 fixture runs the real CLI against a mutable local HTTP source, then changes,
 disables and removes that source. It asserts one source read, one stored report,
 one revision increment and identical replayed receipts.
+
+## Opt-in GitLab runtime board
+
+The fixture remains available. A separate, opt-in runtime board now discovers real
+GitLab issues through the existing tracker poll and launches the existing
+Symphony AgentRunner only after a human preview/approval. It adds no scheduler.
+Use [the workflow example](../elixir/runtime-board-workflow.example.md) with the
+normal Symphony executable, not `demo.exs`. See [the API contract](BOARD_API_CONTRACT.md).
+
+Required configuration:
+
+1. Select the GitLab API endpoint and project (`GITLAB_API_URL`,
+   `GITLAB_PROJECT_PATH`) and a suitably scoped read credential (`GITLAB_PAT`).
+   Do not paste credentials in workflow files or source control.
+2. Set a private `SYMPHONY_BOARD_TOKEN` of at least 32 bytes. Browser Basic auth
+   retains username `demo`; its password is this board token. For the existing CLI,
+   set `SYMPHONY_DEMO_TOKEN` to the same token and `SYMPHONY_URL` to the loopback URL.
+3. Enable `board`, choose a dedicated database outside an empty dedicated workspace
+   root, set local workers and `agent.max_concurrent_agents: 1`. Use separate
+   instances, database, workspace, token and port for other projects. Workspace
+   ownership is marked and verified; database permissions are 0600, root 0700.
+4. Configure a working authenticated Codex app-server, bounded `max_turns`, sandbox
+   and reviewed repository checkout hooks. The example intentionally has no checkout
+   hook. Start the normal executable with the selected workflow as described in
+   the Elixir README. Keep HTTP bound to loopback.
+5. Open `/tasks`. Issues appear automatically, but polling never launches workers.
+   Select a task, preview the real execution scope, then approve one attempt.
+   Watch the observed worker event/turn count. Stop addresses that actual worker;
+   every retry needs a new preview. Successful process exit requests Human Review.
+
+The start approval authorizes one worker lifetime under the configured workflow,
+up to `max_turns`; it is not an approval to merge. No automatic continuation/retry
+is scheduled in board mode. Fresh source content is checked again before spawn.
+Config/prompt/provider credential changes fence active/new work. Restart clears
+approvals and interrupts persisted active reservations. Same-project credential
+rotation preserves tasks; project/endpoint/database/workspace changes require a
+new isolated database/root. Schema 4 adds durable scope; fixture databases cannot
+be reused for real execution. Keep a backup before upgrading; old binaries cannot
+read schema 4. Turning `board.enabled` off and restarting restores the original
+**automatic** scheduler, not merely a hidden UI.
+
+GitLab-bound agent tools in this mode permit only project-scoped read-only issue
+and merge-request endpoints. They cannot create/update/close/merge provider items.
+The board preserves source ID/IID/state separately from editable local stages.
+A closed source issue appears Done, but is not evidence of a merged PR. Real
+worker exit appears Human Review, with `release_verified: false`. Plans, authored
+sections, comments/replies and explicit evidence imports remain shared UI/API/CLI
+operations; generated agent text is not automatically represented as authored work.
+Only bounded worker event/turn-count observations are persisted, not raw prompts,
+logs, workspace paths or sessions.
+
+### What was validated and what remains
+
+Tests use a synthetic GitLab adapter and fake Codex protocol process through the
+actual existing scheduler, AgentRunner and workspace lifecycle. No live GitLab
+credential, real Codex account or production repository was used. Live validation
+requires an explicitly selected project/API credential, authenticated Codex command,
+reviewed checkout hooks and execution authorization for that project.
+
+Remaining gaps relative to the video: automatic PR creation/status/merge syncing,
+agent-authored plan/activity ingestion, interactive in-run approval/resume UI,
+remote workers, tenant permissions and public phone hosting. Existing explicit
+PR/runtime/artifact imports are supported but are not automatic integrations.
+Google Calendar/Tasks remain unimplemented. This is not exact video parity.
+
+Reproduce the local integration without external credentials:
+
+```bash
+# Install existing dependencies first; use a fresh disposable local token.
+cd elixir
+SYMPHONY_BOARD_TOKEN="$DISPOSABLE_TEST_TOKEN" mix run --no-start ../scripts/runtime_board_fixture.exs
+# In another terminal with Playwright installed:
+SYMPHONY_BOARD_TOKEN="$DISPOSABLE_TEST_TOKEN" node scripts/check_runtime_board.cjs
+```
+
+Run the browser command from the repository root. The fixture binds loopback port
+4000, uses a fresh temporary database/workspace and explicitly synthetic tasks.
+It stays alive until stopped. No public link or remote ingress is created.

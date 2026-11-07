@@ -1,4 +1,6 @@
 ---
+# Opt-in GitLab board configuration: runtime-board-workflow.example.md
+# Contract/isolation: ../docs/BOARD_API_CONTRACT.md
 tracker:
   kind: linear
   provider:

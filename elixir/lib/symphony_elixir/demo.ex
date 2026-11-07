@@ -2,14 +2,23 @@ defmodule SymphonyElixir.Demo do
   @moduledoc "Manual fixture lifecycle, executed only inside the existing orchestrator. No shell or network tools."
   alias SymphonyElixir.Demo.Content
   alias SymphonyElixir.Demo.Store
-  @active ~w(starting running stopping)
+  @active ~w(authorized starting running stopping)
   @stages ["Backlog", "Todo", "In Progress", "Human Review", "Merging", "Done", "Rework", "Canceled", "Duplicate"]
 
   @spec open(keyword()) :: map()
   def open(opts) do
-    {db, data} = Store.open(Application.fetch_env!(:symphony_elixir, :demo_db))
+    {db, data} = Store.open(Keyword.get_lazy(opts, :database, fn -> Application.fetch_env!(:symphony_elixir, :demo_db) end))
 
-    data = data || %{"tasks" => initial_tasks(), "board_revision" => 1, "runs" => [], "events" => [], "commands" => %{}, "approvals" => %{}}
+    expected_scope = Keyword.get(opts, :runtime_scope)
+
+    if data && data["runtime_scope"] != expected_scope do
+      Exqlite.Sqlite3.close(db)
+      raise "Board database scope mismatch; use an isolated database"
+    end
+
+    tasks = Keyword.get_lazy(opts, :tasks, &initial_tasks/0)
+    data = data || %{"tasks" => tasks, "board_revision" => 1, "runs" => [], "events" => [], "commands" => %{}, "approvals" => %{}}
+    data = if expected_scope, do: data |> Map.put("runtime_scope", expected_scope) |> Map.put("approvals", %{}), else: data
     data = migrate(data)
 
     data = Map.update!(data, "runs", &Enum.map(&1, fn run -> recover(run) end))
@@ -127,19 +136,30 @@ defmodule SymphonyElixir.Demo do
 
   defp transition(%{"op" => "preview"}, data) do
     eligible!(data)
-    approval = %{"id" => id(), "task_id" => data["task"]["id"], "revision" => data["task"]["revision"], "expires" => System.system_time(:second) + 120, "scope" => "fixture-only; no external actions"}
+
+    approval = %{
+      "id" => id(),
+      "task_id" => data["task"]["id"],
+      "revision" => data["task"]["revision"],
+      "expires" => System.system_time(:second) + 120,
+      "scope" =>
+        if(data["runtime_scope"], do: "One real Codex worker attempt under the configured GitLab workflow; no automatic continuation or verified merge", else: "fixture-only; no external actions")
+    }
+
     approvals = Map.reject(data["approvals"], fn {_, value} -> value["task_id"] == data["task"]["id"] end)
     {approval, put_in(data["approvals"], Map.put(approvals, approval["id"], approval)), nil}
   end
 
-  defp transition(%{"op" => op} = req, data) when op in ["start", "retry"] do
+  defp transition(%{"op" => op} = req, data) when op in ["start", "retry", "runtime-start"] do
+    real = op == "runtime-start"
+    require!(not real or not is_nil(data["runtime_scope"]), "runtime_disabled")
+    op = if real, do: req["runtime_action"], else: op
     eligible!(data)
     approval = data["approvals"][req["approval"]]
 
     require!(valid_approval?(approval, data["task"]), "approval_required")
 
-    parent = if op == "retry", do: Enum.find(data["runs"], &(&1["id"] == req["run_id"])), else: nil
-    require!(op != "retry" or (parent != nil and parent["task_id"] == data["task"]["id"] and parent["state"] not in @active), "invalid_retry")
+    parent = retry_parent!(op, req, data)
     runs = Enum.filter(data["runs"], &(&1["task_id"] == data["task"]["id"]))
     require!(runs == [] or op == "retry", "explicit_retry_required")
     require!(length(runs) < 3, "budget_exhausted")
@@ -149,15 +169,16 @@ defmodule SymphonyElixir.Demo do
       "task_id" => data["task"]["id"],
       "attempt" => length(runs) + 1,
       "parent_id" => parent && parent["id"],
-      "state" => "starting",
+      "state" => if(real, do: "authorized", else: "starting"),
       "created_at" => DateTime.to_iso8601(DateTime.utc_now()),
-      "simulated" => true,
+      "simulated" => not real,
+      "source_digest" => if(real, do: data["task"]["source_digest"], else: nil),
       "evidence" => nil,
       "approval" => approval["id"]
     }
 
     data = data |> Map.put("runs", data["runs"] ++ [run]) |> put_in(["task", "stage"], "In Progress") |> bump()
-    {run, data, {:start, run["id"]}}
+    {run, data, if(real, do: nil, else: {:start, run["id"]})}
   end
 
   defp transition(%{"op" => op}, data) when op in ["hold", "release-hold"] do
@@ -270,6 +291,14 @@ defmodule SymphonyElixir.Demo do
 
   defp transition(%{"op" => "sync"}, data), do: {%{"simulated" => true, "dispatched" => false}, data, nil}
   defp transition(_, _), do: throw({:reject, "unsupported_command"})
+
+  defp retry_parent!("retry", req, data) do
+    parent = Enum.find(data["runs"], &(&1["id"] == req["run_id"]))
+    require!(parent != nil and parent["task_id"] == data["task"]["id"] and parent["state"] not in @active, "invalid_retry")
+    parent
+  end
+
+  defp retry_parent!(_, _, _), do: nil
 
   defp eligible!(data) do
     require!(not data["task"]["hold"], "held")

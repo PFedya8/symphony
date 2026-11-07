@@ -11,15 +11,16 @@ An original nine-column board (Backlog, Todo, In Progress, Human Review, Merging
 Done, Rework, Canceled and Duplicate), multiple tasks, project filtering, task creation and direct detail links.
 Details provide manual stage transitions, editable checklists, approval/run
 controls, persisted activity and user-supplied HTTPS PR/walkthrough links.
-UI, API and CLI use the existing service and orchestrator. No competing scheduler,
-real agent execution, external write or deployment was added.
+UI, API and CLI use the existing service and orchestrator. The opt-in GitLab
+runtime mode now connects issue discovery and approved AgentRunner execution.
+No competing scheduler, live provider write or deployment was added.
 
 ## Results
 
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 328 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 340 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
 | Python CLI regression suite | 19 tests passed, including local HTTP argument checks and board command payloads |
@@ -89,9 +90,10 @@ reload takes effect, and mobile errors are not obscured by the full-screen panel
 
 ## Limits and remaining work
 
-This is a functional fixture board, **not full parity with the Linear video**.
-Plans and authored sections are manually maintained; the three-second worker is a fixed simulator.
-Tracker import, actual agent-generated plans, automatic PR creation/status sync,
+The default fixture and opt-in runtime board are **not full parity with the Linear video**.
+Plans and authored sections are manually maintained. The fixture worker is simulated;
+the runtime mode uses the actual AgentRunner with explicit human approval.
+Actual agent-generated plans, automatic PR creation/status sync,
 Calendar/Google Tasks, tenant permissions and hosted phone access
 are not implemented or verified. Column transitions use drag-and-drop or an accessible selector. No real issue
 was closed, PR merged or production release verified.
@@ -101,7 +103,7 @@ instances/tokens/databases are required for access isolation. All links remain
 unverified and are never fetched by the server. The Go comparison implementation
 has not been ported to this new board/schema by this PR.
 
-The schema is now version 3. Back up an old database while stopped before opening
+The schema is now version 4. Back up an old database while stopped before opening
 it with this version; rollback needs the pre-upgrade backup. Unknown active runs
 are interrupted on restart, not automatically adopted or replayed. The suite
 checks expiry handling but does not wait two minutes to verify real wall-clock
@@ -121,7 +123,7 @@ not a claim of pixel or runtime parity with Linear.
 | Authored nested Plan, Acceptance Criteria, Validation in activity | Immutable authored updates with three nested levels and durable activity; shared API/CLI/UI | Operator authored, not automatic agent-generated content |
 | GitHub PR and walkthrough | Real one-shot GitHub PR API import; HTTPS links; opt-in Vimeo/YouTube embeds | No automatic PR creation/status synchronization; provider playback not verified |
 | Replies and comments | Durable three-level plain-text threads; authenticated shared operator; bounded resources | Individual users, edit/delete and moderation workflow not implemented |
-| Agent workflow and merge completion | Fixed simulator moves its own task to Human Review; operators may move Merging/Done | Real agent/tracker/PR integration and verified merge transitions are not connected |
+| Agent workflow and merge completion | Fixture simulation or runtime worker exit moves its own task to Human Review; operators may move Merging/Done | Opt-in GitLab discovery and approved AgentRunner are connected; live validation and PR/merge sync remain unavailable |
 
 The shared service now includes these authored sections, comments and reports.
 Existing runtime observation can be imported from its loopback issue API without
@@ -175,3 +177,29 @@ Python tests cover receipt-first ordering for runtime, GitHub and file imports
 and matching identity propagation from lookup to commit. Historical imports
 without source identities retain their strict old semantics and fail closed on
 lookup; the guide explains safe manual reconciliation.
+
+## Opt-in GitLab runtime integration
+
+`RuntimeBoard` is durable state owned by the existing Orchestrator, with no second
+process scheduler. The existing tracker poll discovers issues; actual AgentRunner
+workers require a fresh human preview and source-bound approval. Synthetic provider
+and Codex protocol tests cover real process/workspace lifecycle, receipt replay
+while the provider is offline, fresh-source invalidation, stop/hold, restart,
+configuration fencing, isolated database/workspace ownership, read-only scoped
+provider tools and the existing shared authoring/UI/API contract.
+
+Reproduction: `mix test test/symphony_elixir/runtime_board_test.exs`, then the full
+`make all` gate. The guide includes the separate local browser fixture commands.
+`node scripts/check_runtime_board.cjs` passed against that loopback fixture with
+no browser errors: automatic source discovery, no unapproved launch, observed
+running/completed state, actual stop/hold and API/UI identity. The fake protocol
+process exercises actual AgentRunner plumbing; it is not a real Codex model run.
+
+- [Runtime board, desktop](screenshots/board/12-runtime-board-desktop.png)
+- [Observed worker, mobile viewport](screenshots/board/13-runtime-worker-mobile.png)
+- [Observed completion, desktop](screenshots/board/14-runtime-completion-desktop.png)
+
+No live GitLab account, real Codex account, production repository checkout or public
+endpoint was used. Required live configuration and remaining integration gaps are
+listed in the operator guide. The Go compatibility boundary is documented in
+[BOARD_API_CONTRACT.md](BOARD_API_CONTRACT.md); this PR does not implement Go support.

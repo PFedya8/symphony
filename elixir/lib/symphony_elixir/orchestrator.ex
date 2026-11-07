@@ -7,7 +7,7 @@ defmodule SymphonyElixir.Orchestrator do
   require Logger
   import Bitwise, only: [<<<: 2]
 
-  alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.{AgentRunner, Config, RuntimeBoard, StatusDashboard, Tracker, Workspace}
   alias SymphonyElixir.Tracker.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -34,6 +34,7 @@ defmodule SymphonyElixir.Orchestrator do
       :tick_timer_ref,
       :tick_token,
       task_supervisor: SymphonyElixir.TaskSupervisor,
+      board: nil,
       running: %{},
       completed: MapSet.new(),
       claimed: MapSet.new(),
@@ -54,6 +55,7 @@ defmodule SymphonyElixir.Orchestrator do
   @impl true
   def init(opts) do
     if Application.get_env(:symphony_elixir, :demo) do
+      Process.flag(:trap_exit, true)
       {:ok, {:demo, SymphonyElixir.Demo.open(opts)}}
     else
       init_tracker(opts)
@@ -62,14 +64,17 @@ defmodule SymphonyElixir.Orchestrator do
 
   @impl true
   def terminate(_reason, {:demo, state}), do: Exqlite.Sqlite3.close(state.db)
+  def terminate(_reason, %{board: %{db: db}}), do: Exqlite.Sqlite3.close(db)
   def terminate(_reason, _state), do: :ok
 
   defp init_tracker(opts) do
     case Config.settings() do
       {:ok, config} ->
+        if config.board.enabled, do: Process.flag(:trap_exit, true)
         now_ms = System.monotonic_time(:millisecond)
 
         state = %State{
+          board: RuntimeBoard.open(config, opts),
           poll_interval_ms: config.polling.interval_ms,
           max_concurrent_agents: config.agent.max_concurrent_agents,
           next_poll_due_at_ms: now_ms,
@@ -81,7 +86,7 @@ defmodule SymphonyElixir.Orchestrator do
           codex_rate_limits: nil
         }
 
-        run_terminal_workspace_cleanup()
+        if is_nil(state.board), do: run_terminal_workspace_cleanup()
         state = schedule_tick(state, 0)
 
         {:ok, state}
@@ -134,7 +139,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   def handle_info(:run_poll_cycle, state) do
     state = refresh_runtime_config(state)
-    state = maybe_dispatch(state)
+    state = maybe_dispatch(state) |> fence_board() |> observe_board()
     state = schedule_tick(state, state.poll_interval_ms)
     state = %{state | poll_check_in_progress: false}
 
@@ -177,7 +182,7 @@ defmodule SymphonyElixir.Orchestrator do
           |> maybe_put_runtime_value(:workspace_path, runtime_info[:workspace_path])
 
         notify_dashboard()
-        {:noreply, %{state | running: Map.put(running, issue_id, updated_running_entry)}}
+        {:noreply, observe_board(%{state | running: Map.put(running, issue_id, updated_running_entry)})}
     end
   end
 
@@ -198,7 +203,7 @@ defmodule SymphonyElixir.Orchestrator do
           |> apply_codex_rate_limits(update)
 
         notify_dashboard()
-        {:noreply, %{state | running: Map.put(running, issue_id, updated_running_entry)}}
+        {:noreply, observe_board(%{state | running: Map.put(running, issue_id, updated_running_entry)})}
     end
   end
 
@@ -220,6 +225,20 @@ defmodule SymphonyElixir.Orchestrator do
   def handle_info(msg, state) do
     Logger.debug("Orchestrator ignored message: #{inspect(msg)}")
     {:noreply, state}
+  end
+
+  defp handle_agent_down(reason, %State{board: board} = state, issue_id, running_entry, _session_id) when is_map(board) do
+    blocked = input_required_blocker?(running_entry)
+
+    status =
+      cond do
+        blocked -> "blocked"
+        reason == :normal -> "succeeded"
+        true -> "failed"
+      end
+
+    board = RuntimeBoard.run_state(board, issue_id, status, %{"event" => "worker_exit", "normal_exit" => reason == :normal, "release_verified" => false})
+    %{state | board: board, claimed: MapSet.delete(state.claimed, issue_id), retry_attempts: Map.delete(state.retry_attempts, issue_id)}
   end
 
   defp handle_agent_down(:normal, state, issue_id, running_entry, session_id) do
@@ -271,16 +290,18 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp maybe_dispatch(%State{} = state) do
-    state =
-      state
-      |> reconcile_running_issues()
-      |> reconcile_blocked_issues()
+    state = if is_nil(state.board), do: state |> reconcile_running_issues() |> reconcile_blocked_issues(), else: state
 
     with :ok <- Config.validate!(),
-         {:ok, issues} <- Tracker.fetch_issues_by_states(Config.settings!().tracker.active_states),
-         true <- available_slots(state) > 0 do
-      choose_issues(issues, state)
+         :ok <- board_scope_check(state),
+         {:ok, issues} <- Tracker.fetch_issues_by_states(board_poll_states(state)) do
+      state = if state.board, do: state |> reconcile_running_issues() |> reconcile_blocked_issues(), else: state
+      state = if state.board, do: %{state | board: RuntimeBoard.ingest(state.board, issues)}, else: state
+      if is_nil(state.board) and available_slots(state) > 0, do: choose_issues(issues, state), else: state
     else
+      {:error, :runtime_scope_changed} ->
+        Enum.reduce(state.running, state, fn {id, entry}, acc -> stop_and_block_issue(acc, id, entry, "runtime scope changed; restart with isolated configuration") end)
+
       {:error, :missing_linear_api_token} ->
         Logger.error("Tracker API token missing in WORKFLOW.md")
         state
@@ -317,9 +338,6 @@ defmodule SymphonyElixir.Orchestrator do
 
       {:error, reason} ->
         Logger.error("Failed to fetch from issue tracker: #{inspect(reason)}")
-        state
-
-      false ->
         state
     end
   end
@@ -836,7 +854,8 @@ defmodule SymphonyElixir.Orchestrator do
          active_states,
          terminal_states
        ) do
-    candidate_issue?(issue, active_states, terminal_states) and
+    RuntimeBoard.authorized_issue?(state.board, issue) and
+      candidate_issue?(issue, active_states, terminal_states) and
       !MapSet.member?(claimed, issue.id) and
       !Map.has_key?(running, issue.id) and
       !Map.has_key?(blocked, issue.id) and
@@ -955,6 +974,11 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp do_dispatch_issue(%State{} = state, issue, attempt, preferred_worker_host) do
+    if RuntimeBoard.authorized_issue?(state.board, issue), do: do_authorized_dispatch(state, issue, attempt, preferred_worker_host), else: state
+  end
+
+  defp do_authorized_dispatch(%State{} = state, issue, attempt, preferred_worker_host) do
+    state = if state.board, do: %{state | board: RuntimeBoard.run_state(state.board, issue.id, "starting")}, else: state
     recipient = self()
 
     case select_worker_host(state, preferred_worker_host) do
@@ -1046,6 +1070,10 @@ defmodule SymphonyElixir.Orchestrator do
       | completed: MapSet.put(state.completed, issue_id),
         retry_attempts: Map.delete(state.retry_attempts, issue_id)
     }
+  end
+
+  defp schedule_issue_retry(%State{board: board} = state, issue_id, _attempt, _metadata) when is_map(board) do
+    %{state | board: RuntimeBoard.run_state(board, issue_id, "failed"), claimed: MapSet.delete(state.claimed, issue_id)}
   end
 
   defp schedule_issue_retry(%State{} = state, issue_id, attempt, metadata)
@@ -1405,6 +1433,66 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
+  defp board_poll_states(%{board: nil}), do: Config.settings!().tracker.active_states
+  defp board_poll_states(_), do: Config.settings!().tracker.active_states ++ Config.settings!().tracker.terminal_states
+  defp board_scope_check(%{board: nil}), do: :ok
+  defp board_scope_check(%{board: board}), do: if(RuntimeBoard.current?(board), do: :ok, else: {:error, :runtime_scope_changed})
+  defp fence_board(%{board: nil} = state), do: state
+
+  defp fence_board(state) do
+    if RuntimeBoard.current?(state.board) do
+      state
+    else
+      Enum.reduce(state.running, state, fn {id, entry}, acc ->
+        stop_and_block_issue(acc, id, entry, "runtime configuration invalid or changed")
+      end)
+    end
+  end
+
+  defp observe_board(state), do: %{state | board: RuntimeBoard.observe(state.board, state.running, state.blocked)}
+
+  defp refresh_board_request(%{"op" => op} = req, state) when op in ~w(preview start retry) do
+    if RuntimeBoard.current?(state.board) do
+      case Tracker.fetch_issues_by_ids([req["task_id"]]) do
+        {:ok, [%Issue{} = issue]} -> {:ok, %{state | board: RuntimeBoard.ingest(state.board, [issue])}}
+        _ -> {:error, "tracker_refresh_failed"}
+      end
+    else
+      {:error, "runtime_scope_changed"}
+    end
+  end
+
+  defp refresh_board_request(_, state), do: {:ok, state}
+
+  defp board_command_effect(%{"op" => op, "task_id" => id}, {:ok, _}, state) when op in ~w(start retry) do
+    if RuntimeBoard.authorized?(state.board, id) do
+      state = %{state | claimed: MapSet.delete(state.claimed, id), blocked: Map.delete(state.blocked, id)}
+
+      dispatch_board_issue(state, id)
+    else
+      state
+    end
+  end
+
+  defp board_command_effect(%{"op" => "stop", "task_id" => id}, {:ok, _}, state) do
+    state = if entry = state.running[id], do: stop_and_block_issue(state, id, entry, "operator stop"), else: state
+    %{state | board: RuntimeBoard.run_state(state.board, id, "stopped")}
+  end
+
+  defp board_command_effect(_, _, state), do: state
+
+  defp dispatch_board_issue(state, id) do
+    case Tracker.fetch_issues_by_ids([id]) do
+      {:ok, [%Issue{} = issue]} ->
+        eligible = should_dispatch_issue?(issue, state, active_state_set(), terminal_state_set())
+        state = if eligible, do: dispatch_issue(state, issue), else: state
+        if RuntimeBoard.authorized?(state.board, id), do: %{state | board: RuntimeBoard.run_state(state.board, id, "failed")}, else: state
+
+      _ ->
+        %{state | board: RuntimeBoard.run_state(state.board, id, "failed")}
+    end
+  end
+
   @spec snapshot() :: map() | :timeout | :unavailable
   def snapshot, do: snapshot(__MODULE__, 15_000)
 
@@ -1429,6 +1517,32 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   def handle_call(_request, _from, {:demo, _} = state), do: {:reply, {:error, :unavailable}, state}
+
+  def handle_call({:demo, request}, _from, %State{board: board} = state) when is_map(board) do
+    state = state |> fence_board() |> observe_board()
+    run = Enum.find(board.data["runs"], &(&1["id"] == request["run_id"]))
+    request = if is_nil(request["task_id"]) and run, do: Map.put(request, "task_id", run["task_id"]), else: request
+
+    checked =
+      case RuntimeBoard.replay(request, state.board) do
+        :missing -> refresh_board_request(request, state)
+        result -> {:replay, result}
+      end
+
+    case checked do
+      {:replay, result} ->
+        {:reply, result, state}
+
+      {:error, code} ->
+        {:reply, {:error, code}, state}
+
+      {:ok, state} ->
+        {reply, board} = RuntimeBoard.command(request, state.board)
+        state = %{state | board: board}
+        state = board_command_effect(request, reply, state) |> observe_board()
+        {:reply, reply, state}
+    end
+  end
 
   def handle_call({:demo, _request}, _from, state), do: {:reply, {:error, "disabled"}, state}
 

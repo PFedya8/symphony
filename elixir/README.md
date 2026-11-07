@@ -437,3 +437,11 @@ imports of reviewed agent artifacts, existing local runtime observations and
 GitHub PR API evidence. Imports retain provenance and do not claim a verified
 merge or change execution state. See the manual demo guide for schema-3 backup,
 provider boundaries, CLI commands and the remaining video-parity gaps.
+
+### Manually approved GitLab board
+
+For automatic GitLab issue discovery with explicit approval before each existing
+Symphony worker attempt, see [runtime-board-workflow.example.md](runtime-board-workflow.example.md)
+and the [runtime board guide](../docs/MANUAL_DEMO_GUIDE.md#opt-in-gitlab-runtime-board).
+This mode is opt-in, local-worker-only, loopback-only and single-worker. It uses
+separate scoped state/workspace roots; disabling it restores automatic scheduling.

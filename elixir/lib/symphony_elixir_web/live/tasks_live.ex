@@ -7,7 +7,7 @@ defmodule SymphonyElixirWeb.TasksLive do
 
   @impl true
   def mount(_, session, socket) do
-    token = Application.get_env(:symphony_elixir, :demo_token, "")
+    token = SymphonyElixirWeb.DemoAuth.token() || ""
 
     if byte_size(token) >= 32 and session["demo_auth"] == SymphonyElixirWeb.DemoAuth.digest(token) do
       if connected?(socket), do: Phoenix.PubSub.subscribe(SymphonyElixir.PubSub, "demo")
@@ -60,7 +60,7 @@ defmodule SymphonyElixirWeb.TasksLive do
         "revision" => parse_step(params["revision"]),
         "key" => Base.url_encode64(:crypto.strong_rand_bytes(18)),
         "scope" => "control",
-        "actor" => "demo-operator"
+        "actor" => SymphonyElixirWeb.DemoAuth.actor()
       })
 
     error =
@@ -96,7 +96,7 @@ defmodule SymphonyElixirWeb.TasksLive do
         "revision" => revision,
         "key" => Base.url_encode64(:crypto.strong_rand_bytes(18)),
         "scope" => "control",
-        "actor" => "demo-operator"
+        "actor" => SymphonyElixirWeb.DemoAuth.actor()
       })
 
     result = if params["task_id"] in [nil, socket.assigns.task_id], do: Service.request(req), else: {:error, "stale_selection"}
@@ -128,6 +128,7 @@ defmodule SymphonyElixirWeb.TasksLive do
     previous = if same_task, do: socket.assigns[:drafts] || %{}, else: %{}
     drafts = Map.merge(drafts, Map.filter(previous, fn {_, draft} -> draft["active"] end))
     approval = if payload["approval_valid"], do: approval, else: nil
+    socket = assign(socket, runtime: payload["mode"] == "gitlab_runtime")
     assign(socket, payload: payload, drafts: drafts, draft_task_id: socket.assigns.task_id, approval: approval)
   end
 
@@ -198,14 +199,15 @@ defmodule SymphonyElixirWeb.TasksLive do
     <div class="work-board">
       <header class="board-header">
         <div><p class="board-eyebrow">SYMPHONY / WORKSPACE</p><h1>Task board</h1><p>From intent to review, with a visible trail.</p></div>
-        <span class="fixture-label">● Fixture workspace</span>
+        <span class="fixture-label">{if @runtime, do: "● GitLab runtime", else: "● Fixture workspace"}</span>
       </header>
-      <div class="board-notice">Simulated agents · manual dispatch · concurrency one. No live tracker, agent, PR or deployment is connected.</div>
+      <div class="board-notice">{if @runtime, do: "GitLab issues · existing Symphony orchestrator · one real worker per explicit approval. Board stages do not change GitLab or verify a merge.", else: "Simulated agents · manual dispatch · concurrency one. No live tracker, agent, PR or deployment is connected."}</div>
+      <p :if={@payload["runtime_error"]} role="alert" class="board-error">Runtime configuration changed. Dispatch is blocked; stop any active run and restart with the bound configuration.</p>
       <p :if={@error && not @detail} role="alert" aria-live="assertive" data-error={@error} class="board-error">{error_message(@error)}</p>
       <div class="board-toolbar">
         <form phx-change="filter"><label>Project <select name="project" aria-label="Project"><option value="" selected={is_nil(@project)}>All projects</option><option :for={project <- projects(@payload)} value={project} selected={@project == project}>{project}</option></select></label></form>
         <span>{length(@payload["tasks"])} tasks · shared API + CLI</span>
-        <details id="new-task-panel" class="new-task" phx-mounted={JS.ignore_attributes("open")}><summary>＋ New task</summary><form id="create-task" phx-submit="create" phx-change="draft"><input type="hidden" name="_form" value="create" /><input type="hidden" name="revision" value={@drafts["create"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} />
+        <details :if={not @runtime} id="new-task-panel" class="new-task" phx-mounted={JS.ignore_attributes("open")}><summary>＋ New task</summary><form id="create-task" phx-submit="create" phx-change="draft"><input type="hidden" name="_form" value="create" /><input type="hidden" name="revision" value={@drafts["create"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} />
           <label>Title<input phx-focus="begin-draft" phx-value-form="create" phx-value-revision={@drafts["create"]["revision"]} phx-value-task_id={@task_id} name="title" value={@drafts["create"]["title"]} required maxlength="160" placeholder="What needs to change?" /></label>
           <label>Project<input phx-focus="begin-draft" phx-value-form="create" phx-value-revision={@drafts["create"]["revision"]} phx-value-task_id={@task_id} name="project" required maxlength="80" value={@drafts["create"]["project"] || @project || "demo"} /></label>
           <label>Description<textarea phx-focus="begin-draft" phx-value-form="create" phx-value-revision={@drafts["create"]["revision"]} phx-value-task_id={@task_id} name="description" required maxlength="4000" placeholder="Context and acceptance criteria">{@drafts["create"]["description"]}</textarea></label>
@@ -218,7 +220,7 @@ defmodule SymphonyElixirWeb.TasksLive do
           <.link :for={task <- column_tasks(@payload, @project, stage)} patch={board_path(@project, task["id"])} class="task-card" draggable="true" data-task-id={task["id"]} data-revision={task["revision"]} id={"card-" <> task["id"]}>
             <div class="card-meta"><span>{task["project"]}</span><span>{task["id"]}</span></div>
             <h3>{task["title"]}</h3><p>{task["description"]}</p>
-            <div class="card-footer"><span>◇ Simulation</span><span :if={task["hold"]}>On hold</span><span>{Enum.count(task["plan"], & &1["completed"])}/{length(task["plan"])} checks</span></div>
+            <div class="card-footer"><span>{if @runtime, do: "GitLab issue", else: "◇ Simulation"}</span><span :if={task["hold"]}>On hold</span><span>{Enum.count(task["plan"], & &1["completed"])}/{length(task["plan"])} checks</span></div>
           </.link>
           <p :if={column_tasks(@payload, @project, stage) == []} class="empty-column">Nothing here yet</p>
         </section>
@@ -227,7 +229,7 @@ defmodule SymphonyElixirWeb.TasksLive do
         <header><div><p class="board-eyebrow">{@payload["task"]["project"]} / {@task_id}</p><h2>{@payload["task"]["title"]}</h2></div><.link patch={board_path(@project)} class="close-detail" aria-label="Close task">✕</.link></header>
         <p :if={@error} role="alert" aria-live="assertive" data-error={@error} class="board-error">{error_message(@error)}</p>
         <button type="button" phx-click="expand-detail" aria-expanded={to_string(@expanded)}>{if @expanded, do: "Use side panel", else: "Expand task"}</button>
-        <div class="detail-meta"><span class="stage-tag">{@payload["task"]["stage"]}</span><span>Revision {@payload["task"]["revision"]} · hold: {to_string(@payload["task"]["hold"])}</span><span>Release unverified</span></div>
+        <div class="detail-meta"><span class="stage-tag">{@payload["task"]["stage"]}</span><span>Revision {@payload["task"]["revision"]} · hold: {to_string(@payload["task"]["hold"])}</span><span>Release unverified</span><span :if={@runtime}>GitLab {@payload["task"]["external_id"]} · source: {@payload["task"]["source_state"]}</span></div>
         <p>{@payload["task"]["description"]}</p>
         <form id="move-task" phx-submit="move" phx-change="draft" class="inline-form"><input type="hidden" name="_form" value="move" /><input type="hidden" name="revision" value={@drafts["move"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} /><label>Board stage<select phx-focus="begin-draft" phx-value-form="move" phx-value-revision={@drafts["move"]["revision"]} phx-value-task_id={@task_id} name="stage"><option :for={stage <- @payload["stages"]} value={stage} selected={@drafts["move"]["stage"] == stage}>{stage}</option></select></label><button>Move task</button><button :if={@drafts["move"]["active"]} type="button" phx-click="reload-draft" phx-value-form="move">Reload current data (discard draft)</button></form>
         <p class="muted">Moving a card is a manual board update. It does not run an agent, merge a PR or deploy.</p>
@@ -237,17 +239,17 @@ defmodule SymphonyElixirWeb.TasksLive do
           </div>
           <details id="plan-panel" phx-mounted={JS.ignore_attributes("open")}><summary>Edit plan</summary><form id="edit-plan" phx-submit="plan" phx-change="draft"><input type="hidden" name="_form" value="plan" /><input type="hidden" name="revision" value={@drafts["plan"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} /><label>One step per line (up to 20)<textarea phx-focus="begin-draft" phx-value-form="plan" phx-value-revision={@drafts["plan"]["revision"]} phx-value-task_id={@task_id} name="text" required maxlength="4000">{@drafts["plan"]["text"]}</textarea></label><button>Save plan</button><button :if={@drafts["plan"]["active"]} type="button" phx-click="reload-draft" phx-value-form="plan">Reload current data (discard draft)</button></form></details>
         </section>
-        <section class="detail-section"><h3>Run controls <span>Fixed simulator</span></h3>
+        <section class="detail-section"><h3>Run controls <span>{if @runtime, do: "Real Codex worker", else: "Fixed simulator"}</span></h3>
           <div class="run-controls"><button :for={action <- @payload["task"]["allowed_actions"]} phx-click={action} phx-value-revision={@payload["task"]["revision"]} phx-value-task_id={@task_id}>{action}</button></div>
-          <p :if={@approval} class="approval-note">Preview {@approval["id"]}: fixture only; expires after two minutes. No commit, push or deployment authorized.</p>
-          <button :if={@approval && task_runs(@payload) == []} phx-click="start" phx-value-revision={@payload["task"]["revision"]} phx-value-task_id={@task_id}>Approve and start simulation</button>
+          <p :if={@approval} class="approval-note">Preview {@approval["id"]}: {@approval["scope"]}. Expires after two minutes.</p>
+          <button :if={@approval && task_runs(@payload) == []} phx-click="start" phx-value-revision={@payload["task"]["revision"]} phx-value-task_id={@task_id}>{if @runtime, do: "Approve real worker attempt", else: "Approve and start simulation"}</button>
           <article :for={run <- task_runs(@payload)} id={"run-" <> run["id"]} class="run-row">
-            <strong>{run["state"]} · attempt {run["attempt"]}</strong><p>{run["id"]} <span :if={run["parent_id"]}>· parent {run["parent_id"]}</span></p>
+            <strong>{run["state"]} · attempt {run["attempt"]}</strong><p :if={run["observation"]}>Observed: {run["observation"]["event"]} · release remains unverified</p><p>{run["id"]} <span :if={run["parent_id"]}>· parent {run["parent_id"]}</span></p>
             <button :if={run["state"] in ["starting", "running"]} phx-click="stop" phx-value-revision={@payload["task"]["revision"]} phx-value-task_id={@task_id} phx-value-id={run["id"]}>Stop and hold</button>
             <button :if={@approval && length(task_runs(@payload)) < 3 && run["state"] not in ["starting", "running", "stopping"]} phx-click="retry" phx-value-revision={@payload["task"]["revision"]} phx-value-task_id={@task_id} phx-value-id={run["id"]}>Approve new retry</button>
             <details :if={run["evidence"]}><summary>Simulation evidence</summary><pre>{Jason.encode!(run["evidence"], pretty: true)}</pre></details>
           </article>
-          <p :if={task_runs(@payload) == []} class="muted">No runs. Preview the scope before approving a simulation.</p>
+          <p :if={task_runs(@payload) == []} class="muted">No runs. Preview and review the scope before approving an attempt.</p>
         </section>
         <section class="detail-section"><h3>Authored plan & validation</h3><p class="muted">Operator authored; plain text. Indent by two spaces for nested steps, up to three levels.</p>
           <div :if={@payload["task"]["documents"] != []} class="authored-document">
