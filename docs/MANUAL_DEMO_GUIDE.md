@@ -70,7 +70,9 @@ fresh preview/current revision, and a new key. A stale revision under a new key
 is rejected. Approvals
 are revision-bound and expire after two minutes. Browser Basic Auth is rejected
 for API mutations; the CLI uses a bearer token. Opaque run IDs beginning with
-`-` are accepted unchanged in commands such as `runs stop -run --revision 2`.
+`-` are accepted unchanged, including global flags and separate approval values:
+`--json runs stop -run --revision 2` and
+`runs retry -run --revision 2 --approval -preview`.
 
 ## Reproduce verification
 

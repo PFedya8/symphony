@@ -92,3 +92,17 @@ single/double hyphens, options before/after IDs, explicit separators, retry/read
 commands, normal flags, missing revision and unknown extra options. Run them with
 `python3 scripts/test_symphonyctl.py`. The real HTTP parity test retains its original
 ID-before-options command syntax.
+
+## Global flags and leading-hyphen option values
+
+Follow-up tests reproduced failures with `--json runs stop -run --revision 2`
+and `runs retry -run --revision 2 --approval -preview`. Argument normalization
+now counts actual positionals rather than fixed argv offsets, and binds string
+option values before passing them to argparse. Global/interspersed flags,
+separate and equals-form approval values, leading-hyphen keys, and missing-value
+errors are covered. Existing unambiguous long-option abbreviations are preserved.
+
+`python3 scripts/test_symphonyctl.py` now runs 10 tests. Besides parser regressions,
+a loopback HTTP receiver verifies both reported command forms reach transport
+with unchanged run/approval IDs. No real task service or external account is
+contacted by that test. Elixir/UI code is unchanged by this parser-only follow-up.
