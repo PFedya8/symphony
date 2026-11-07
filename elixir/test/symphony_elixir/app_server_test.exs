@@ -1403,6 +1403,10 @@ defmodule SymphonyElixir.AppServerTest do
 
     custom_secret_env = "SYMP_CUSTOM_LINEAR_API_KEY_#{System.unique_integer([:positive])}"
     profile_marker_env = "SYMP_TEST_BASH_PROFILE_LOADED_#{System.unique_integer([:positive])}"
+    controls = ~w(SYMPHONY_BOARD_TOKEN SYMPHONY_DEMO_TOKEN SYNTHETIC_TOKEN_ALIAS)
+    previous_controls = Map.new(controls, &{&1, System.get_env(&1)})
+    on_exit(fn -> Enum.each(previous_controls, fn {name, value} -> restore_env(name, value) end) end)
+    Enum.each(controls, &System.put_env(&1, "synthetic-control-secret-that-must-not-reach-child"))
     previous_secret = System.get_env("LINEAR_API_KEY")
     previous_custom_secret = System.get_env(custom_secret_env)
     previous_home = System.get_env("HOME")
@@ -1428,6 +1432,9 @@ defmodule SymphonyElixir.AppServerTest do
       File.write!(Path.join(bash_home, ".bash_profile"), """
       export LINEAR_API_KEY='profile-canonical-secret-that-must-not-reach-child'
       export #{custom_secret_env}='profile-custom-secret-that-must-not-reach-child'
+      export SYMPHONY_BOARD_TOKEN=profile-control-secret-that-must-not-reach-child
+      export SYMPHONY_DEMO_TOKEN=profile-control-secret-that-must-not-reach-child
+      export SYNTHETIC_TOKEN_ALIAS=profile-control-secret-that-must-not-reach-child
       export #{profile_marker_env}=1
       """)
 
@@ -1442,6 +1449,7 @@ defmodule SymphonyElixir.AppServerTest do
       printf 'PROFILE_LOADED:%s\n' "$#{profile_marker_env}" >> "$trace_file"
       printf 'CANONICAL_SECRET:%s\n' "$LINEAR_API_KEY" >> "$trace_file"
       printf 'CUSTOM_SECRET:%s\n' "$#{custom_secret_env}" >> "$trace_file"
+      printf 'CONTROLS:%s:%s:%s\n' "$SYMPHONY_BOARD_TOKEN" "$SYMPHONY_DEMO_TOKEN" "$SYNTHETIC_TOKEN_ALIAS" >> "$trace_file"
       count=0
 
       while IFS= read -r line; do
@@ -1490,6 +1498,7 @@ defmodule SymphonyElixir.AppServerTest do
       assert File.read!(trace_file) =~ "PROFILE_LOADED:1\n"
       assert File.read!(trace_file) =~ "CANONICAL_SECRET:\n"
       assert File.read!(trace_file) =~ "CUSTOM_SECRET:\n"
+      assert File.read!(trace_file) =~ "CONTROLS:::\n"
       refute File.read!(trace_file) =~ "secret-that-must-not-reach-child"
     after
       File.rm_rf(test_root)
@@ -1583,7 +1592,7 @@ defmodule SymphonyElixir.AppServerTest do
       assert argv_line =~ "-T -p 2200 worker-01 bash -lc"
       assert argv_line =~ "cd "
       assert argv_line =~ remote_workspace
-      assert argv_line =~ "unset LINEAR_API_KEY"
+      assert argv_line =~ "SYMPHONY_DEMO_TOKEN LINEAR_API_KEY"
       assert argv_line =~ "exec "
       assert argv_line =~ "fake-remote-codex app-server"
 

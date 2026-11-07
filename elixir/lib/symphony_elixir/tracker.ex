@@ -8,6 +8,7 @@ defmodule SymphonyElixir.Tracker do
   """
 
   alias SymphonyElixir.Config
+  alias SymphonyElixir.GitLab.Client, as: GitLabClient
   alias SymphonyElixir.Tracker.Issue
 
   @adapters %{
@@ -47,12 +48,16 @@ defmodule SymphonyElixir.Tracker do
   """
   @spec bind_agent_tools() :: map()
   def bind_agent_tools do
-    tracker_settings = Config.settings!().tracker
+    config = Config.settings!()
+    environment = System.get_env()
+    tracker_settings = config.tracker
     adapter = adapter_for_settings!(tracker_settings)
 
     %{
       adapter: adapter,
-      tracker_settings: tracker_settings,
+      board_policy: board_policy(config, environment),
+      board_generation: if(config.board.enabled, do: SymphonyElixir.RuntimeBoard.configuration_fingerprint(config, environment)),
+      tracker_settings: freeze_provider(tracker_settings, environment),
       tool_specs: adapter_agent_tool_specs(adapter),
       secret_environment_names: adapter_secret_environment_names(adapter, tracker_settings)
     }
@@ -60,18 +65,67 @@ defmodule SymphonyElixir.Tracker do
 
   @spec execute_bound_agent_tool(map(), String.t(), term(), keyword()) :: map()
   def execute_bound_agent_tool(
-        %{adapter: adapter, tracker_settings: tracker_settings},
+        %{adapter: adapter, tracker_settings: tracker_settings} = binding,
         tool,
         arguments,
         opts \\ []
       ) do
-    execute_agent_tool_with_adapter(
-      adapter,
-      tool,
-      arguments,
-      Keyword.put(opts, :tracker_settings, tracker_settings)
-    )
+    if binding_current?(binding) and board_tool_allowed?(Map.get(binding, :board_policy, :standard), tool, arguments) do
+      execute_agent_tool_with_adapter(adapter, tool, arguments, Keyword.put(opts, :tracker_settings, tracker_settings))
+    else
+      unsupported_agent_tool_response("board scope changed or request outside configured-project read policy")
+    end
   end
+
+  defp freeze_provider(%{kind: "gitlab"} = tracker, environment) do
+    case GitLabClient.bind_settings(tracker, environment) do
+      {:ok, settings} -> settings
+      {:error, _} -> raise ArgumentError, "Cannot bind invalid GitLab provider settings"
+    end
+  end
+
+  defp freeze_provider(tracker, _environment), do: tracker
+
+  defp binding_current?(binding) do
+    case Map.get(binding, :board_generation) do
+      nil ->
+        true
+
+      generation ->
+        with :ok <- Config.validate!(), {:ok, config} <- Config.settings() do
+          generation == SymphonyElixir.RuntimeBoard.configuration_fingerprint(config)
+        else
+          _ -> false
+        end
+    end
+  end
+
+  defp board_policy(%{board: %{enabled: false}}, _environment), do: :standard
+
+  defp board_policy(config, environment) do
+    project =
+      case config.tracker.provider["project_path"] do
+        "$" <> name -> environment[name] || environment["GITLAB_PROJECT_PATH"]
+        nil -> environment["GITLAB_PROJECT_PATH"]
+        value -> value
+      end
+
+    {:gitlab_read_only, project || ""}
+  end
+
+  defp board_tool_allowed?(:standard, _, _), do: true
+
+  defp board_tool_allowed?({:gitlab_read_only, project}, "gitlab_api", %{"method" => method, "path" => path} = args)
+       when is_binary(method) and is_binary(path) do
+    prefix = "/projects/" <> URI.encode_www_form(project)
+    suffix = String.replace_prefix(path, prefix, "")
+
+    project != "" and String.upcase(String.trim(method)) == "GET" and args["body"] in [nil, %{}] and
+      String.starts_with?(path, prefix <> "/") and
+      Regex.match?(~r/\A\/(issues|merge_requests)(\/[1-9][0-9]*)?(\/(notes|changes|commits|discussions))?\z/, suffix)
+  end
+
+  defp board_tool_allowed?(_, _, _), do: false
 
   @spec validate_config(map()) :: :ok | {:error, term()}
   def validate_config(%{kind: kind} = tracker_settings) do

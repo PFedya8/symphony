@@ -412,8 +412,50 @@ polling inside the existing orchestrator with explicit simulated dispatch. It bi
 loopback port 4000; `/tasks` and `/api/v1/control/*` share persistent state.
 See [the slice record](../docs/DEVOPS_SLICE_PROGRESS.md) for commands and limitations.
 
+### Isolated manual fixture demo
+
+See [the manual demo guide](../docs/MANUAL_DEMO_GUIDE.md) for browser/CLI use,
+repeatable verification and instance isolation. `mix run --no-start demo.exs`
+requires a private `SYMPHONY_DEMO_DB` path and a random `SYMPHONY_DEMO_TOKEN`
+of at least 32 bytes. Optional `SYMPHONY_DEMO_PORT` (1024–65535, default 4000)
+lets separate local instances use distinct ports; each also needs its own database
+and token. The demo remains loopback-only and never runs real agents.
+
+The manual fixture now provides a multi-task board at `/tasks`, with stages from
+Backlog through Done plus Rework/Canceled/Duplicate, revision-checked drag-and-drop,
+project filtering, expandable detail panels, plans/checklists, activity
+and HTTPS evidence links. `cli/symphonyctl tasks board --json` exposes the same
+state. `tasks create`, `move`, `plan`, `check` and `link` use the shared command
+handler with revision/idempotency checks. Tasks have separate attempt budgets;
+worker capacity remains one globally. The board is simulated and project filters
+are not tenant authorization. See the [guide](../docs/MANUAL_DEMO_GUIDE.md),
+including the version-1/version-2/version-3 to version-4 database migration and rollback instructions.
+
+The board also supports immutable nested Plan/Acceptance Criteria/Validation
+updates, threaded comments, opt-in Vimeo/YouTube walkthroughs and explicit CLI
+imports of reviewed agent artifacts, existing local runtime observations and
+GitHub PR API evidence. Imports retain provenance and do not claim a verified
+merge or change execution state. See the manual demo guide for schema-4 backup,
+provider boundaries, CLI commands and the remaining video-parity gaps.
+
+### Manually approved GitLab board
+
+For automatic GitLab issue discovery with explicit approval before each existing
+Symphony worker attempt, see [runtime-board-workflow.example.md](runtime-board-workflow.example.md)
+and the [runtime board guide](../docs/MANUAL_DEMO_GUIDE.md#opt-in-gitlab-runtime-board).
+This mode is opt-in, local-worker-only, loopback-only and single-worker. It uses
+separate scoped state/workspace roots; disabling it restores automatic scheduling.
+
+Runtime board subprocesses require `setsid` and `kill`; operator credentials are
+scrubbed from child environments and token/configuration changes revoke connected
+board sessions. See the guide for process-group and OS-isolation limitations.
+
+**Current limitation:** non-test builds reject board preview/start/retry until a
+verified OS containment boundary is implemented. Process groups alone were insufficient.
+The GitLab discovery/review UI remains usable. Never deploy synthetic test builds.
+
 At the manual demo’s 1,000-command limit, ordinary writes stop but an effective
-hold and an active-run stop remain available. These add at most two durable
-records, without evicting idempotency results. New no-op safety commands and
+hold and an active-run stop remain available. These add at most one durable hold per existing task plus one active-run stop
+record (at most 101 extra records on the 100-task board), without evicting idempotency results. New no-op safety commands and
 release/start/retry remain blocked. Authentication, revisions and storage success
 are still required; the audit retains its latest 1,000 events.

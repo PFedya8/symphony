@@ -4,7 +4,7 @@ defmodule SymphonyElixirWeb.TaskApiController do
   @spec read(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def read(conn, params) do
     op = params["view"] || "snapshot"
-    request = %{"op" => op}
+    request = %{"op" => op, "task_id" => params["task_id"]}
     request = if params["cursor"], do: Map.put(request, "cursor", parse_cursor(params["cursor"])), else: request
     respond(conn, SymphonyElixir.Service.request(request))
   end

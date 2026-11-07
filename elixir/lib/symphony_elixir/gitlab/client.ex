@@ -7,6 +7,18 @@ defmodule SymphonyElixir.GitLab.Client do
   alias SymphonyElixir.Config
   alias SymphonyElixir.Tracker.Issue
 
+  defmodule BoundSettings do
+    @moduledoc false
+    @derive {Inspect, except: [:api_key]}
+    defstruct [:api_url, :project_path, :api_key]
+    @type t :: %__MODULE__{api_url: String.t(), project_path: String.t(), api_key: String.t()}
+  end
+
+  @spec bind_settings(map(), map()) :: {:ok, BoundSettings.t()} | {:error, term()}
+  def bind_settings(tracker_settings, environment \\ System.get_env()) do
+    with {:ok, settings} <- settings(tracker_settings, environment), do: {:ok, struct!(BoundSettings, settings)}
+  end
+
   @default_api_url "https://gitlab.com/api/v4"
   @page_size 100
 
@@ -293,12 +305,15 @@ defmodule SymphonyElixir.GitLab.Client do
     end
   end
 
-  defp settings(tracker_settings) when is_map(tracker_settings) do
-    provider = provider_settings(tracker_settings)
-    api_url = provider["api_url"] || @default_api_url
-    project_path = resolve_setting(provider["project_path"], System.get_env("GITLAB_PROJECT_PATH"))
+  defp settings(%BoundSettings{} = settings), do: {:ok, settings}
+  defp settings(tracker_settings), do: settings(tracker_settings, System.get_env())
 
-    api_key = resolve_setting(provider["api_key"], System.get_env("GITLAB_PAT"))
+  defp settings(tracker_settings, environment) when is_map(tracker_settings) do
+    provider = provider_settings(tracker_settings)
+    api_url = resolve_setting(provider["api_url"], environment["GITLAB_API_URL"] || @default_api_url, environment)
+    project_path = resolve_setting(provider["project_path"], environment["GITLAB_PROJECT_PATH"], environment)
+
+    api_key = resolve_setting(provider["api_key"], environment["GITLAB_PAT"], environment)
 
     cond do
       not valid_api_url?(api_url) ->
@@ -326,17 +341,17 @@ defmodule SymphonyElixir.GitLab.Client do
   defp provider_settings(%{provider: provider}) when is_map(provider), do: provider
   defp provider_settings(_tracker_settings), do: %{}
 
-  defp resolve_setting(nil, fallback), do: normalize_string(fallback)
+  defp resolve_setting(nil, fallback, _environment), do: normalize_string(fallback)
 
-  defp resolve_setting("$" <> env_name, fallback) do
+  defp resolve_setting("$" <> env_name, fallback, environment) do
     if valid_env_name?(env_name) do
-      normalize_string(System.get_env(env_name) || fallback)
+      normalize_string(environment[env_name] || fallback)
     else
       nil
     end
   end
 
-  defp resolve_setting(value, _fallback), do: normalize_string(value)
+  defp resolve_setting(value, _fallback, _environment), do: normalize_string(value)
 
   defp normalize_string(value) when is_binary(value) do
     case String.trim(value) do

@@ -75,6 +75,20 @@ defmodule SymphonyElixir.GitLab.AdapterTest do
            )["success"]
   end
 
+  test "API URL environment reference in the runtime board example resolves before validation" do
+    previous = System.get_env("GITLAB_API_URL")
+    on_exit(fn -> restore_env("GITLAB_API_URL", previous) end)
+    System.put_env("GITLAB_API_URL", "https://gitlab.synthetic.invalid/api/v4")
+    settings = tracker_settings(%{"api_url" => "$GITLAB_API_URL"})
+    assert :ok = GitLabClient.validate_settings(settings)
+
+    assert {:ok, []} =
+             GitLabClient.fetch_issues_by_states_for_test(["opened"], settings, fn "GET", _, _, _, settings ->
+               assert settings.api_url == "https://gitlab.synthetic.invalid/api/v4"
+               {:ok, %{status: 200, body: []}}
+             end)
+  end
+
   test "client validates project settings and declares token environments" do
     assert :ok = GitLabClient.validate_settings(tracker_settings())
 

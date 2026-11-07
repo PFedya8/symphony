@@ -4,7 +4,7 @@ defmodule SymphonyElixir.SSH do
   @spec run(String.t(), String.t(), keyword()) :: {:ok, {String.t(), non_neg_integer()}} | {:error, term()}
   def run(host, command, opts \\ []) when is_binary(host) and is_binary(command) do
     with {:ok, executable} <- ssh_executable() do
-      {:ok, System.cmd(executable, ssh_args(host, command), opts)}
+      {:ok, System.cmd(executable, ssh_args(host, command), Keyword.update(opts, :env, SymphonyElixir.ChildEnvironment.system_env(), &(&1 ++ SymphonyElixir.ChildEnvironment.system_env())))}
     end
   end
 
@@ -18,7 +18,8 @@ defmodule SymphonyElixir.SSH do
           :binary,
           :exit_status,
           :stderr_to_stdout,
-          args: Enum.map(ssh_args(host, command), &String.to_charlist/1)
+          args: Enum.map(ssh_args(host, command), &String.to_charlist/1),
+          env: SymphonyElixir.ChildEnvironment.port_env()
         ]
         |> maybe_put_line_option(line_bytes)
 
@@ -28,7 +29,7 @@ defmodule SymphonyElixir.SSH do
 
   @spec remote_shell_command(String.t()) :: String.t()
   def remote_shell_command(command) when is_binary(command) do
-    "bash -lc " <> shell_escape(command)
+    "bash -lc " <> shell_escape(SymphonyElixir.ChildEnvironment.command(command))
   end
 
   defp ssh_executable do

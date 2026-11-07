@@ -157,9 +157,33 @@ defmodule SymphonyElixir.SSHTest do
     assert trace =~ "-T -p 2222 localhost bash -lc"
   end
 
+  test "SSH subprocesses cannot inherit board or demo credentials" do
+    root = Path.join(System.tmp_dir!(), "ssh-control-env-#{System.unique_integer([:positive])}")
+    names = ~w(PATH SYMPHONY_BOARD_TOKEN SYMPHONY_DEMO_TOKEN SYNTHETIC_BOARD_ALIAS)
+    previous = Map.new(names, &{&1, System.get_env(&1)})
+
+    on_exit(fn ->
+      Enum.each(previous, fn {name, value} -> restore_env(name, value) end)
+      File.rm_rf!(root)
+    end)
+
+    for name <- tl(names), do: System.put_env(name, "synthetic-operator-token-only")
+    trace = Path.join(root, "auth")
+
+    install_fake_ssh!(root, trace, """
+    #!/bin/sh
+    printf '%s:%s:%s' "$SYMPHONY_BOARD_TOKEN" "$SYMPHONY_DEMO_TOKEN" "$SYNTHETIC_BOARD_ALIAS" >> '#{trace}'
+    """)
+
+    assert {:ok, {"", 0}} = SSH.run("synthetic", "true", env: [{"SYMPHONY_BOARD_TOKEN", "synthetic-operator-token-only"}])
+    assert {:ok, port} = SSH.start_port("synthetic", "true")
+    assert_receive {^port, {:exit_status, 0}}
+    assert File.read!(trace) == "::::"
+  end
+
   test "remote_shell_command/1 escapes embedded single quotes" do
     assert SSH.remote_shell_command("printf 'hello'") ==
-             "bash -lc 'printf '\"'\"'hello'\"'\"''"
+             "bash -lc 'unset SYMPHONY_BOARD_TOKEN SYMPHONY_DEMO_TOKEN && printf '\"'\"'hello'\"'\"''"
   end
 
   defp install_fake_ssh!(test_root, trace_file, script \\ nil) do

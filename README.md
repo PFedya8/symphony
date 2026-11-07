@@ -47,6 +47,32 @@ Phoenix task UI and thin `cli/symphonyctl` HTTP client. See
 [setup, scope and validation](docs/DEVOPS_SLICE_PROGRESS.md). Real tracker work and
 release verification remain separate from simulated run success.
 
+For the isolated Elixir manual fixture UI, CLI and verification steps, see the
+[manual demo guide](docs/MANUAL_DEMO_GUIDE.md). Separate demo instances can use
+distinct local ports, databases and tokens; this is not multi-tenant hosting.
+
+The Elixir fixture UI now includes a nine-stage, multi-task board with project
+filtering, task details, editable checklists, activity and user-supplied evidence
+links. Browser, CLI and API use the same durable service. Execution remains an
+explicitly labeled simulator; real tracker/agent and PR synchronization are not
+connected to this board. See the [board guide](docs/MANUAL_DEMO_GUIDE.md).
+
+The board also supports immutable nested Plan/Acceptance Criteria/Validation
+updates, threaded comments, opt-in Vimeo/YouTube walkthroughs and explicit CLI
+imports of reviewed agent artifacts, existing local runtime observations and
+GitHub PR API evidence. Imports retain provenance and do not claim a verified
+merge or change execution state. See the manual demo guide for schema-4 backup,
+provider boundaries, CLI commands and the remaining video-parity gaps.
+
+The [opt-in GitLab runtime board](docs/MANUAL_DEMO_GUIDE.md#opt-in-gitlab-runtime-board)
+connects automatic issue discovery to the existing Symphony worker lifecycle with
+explicit approval per attempt. Synthetic integration tests cover this path; live
+provider execution and automatic PR/merge synchronization are not claimed.
+
+Real execution from the GitLab board is currently blocked pending verified OS
+containment. Issue discovery and review remain available; orchestration execution
+is exercised only with synthetic test fixtures. See the operator guide for details.
+
 ### Go manual fixture comparison
 
 The optional [Go fixture service](go-manual/README.md) implements the manual demo

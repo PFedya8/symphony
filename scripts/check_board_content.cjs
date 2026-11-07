@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+// Disposable local fixture only. Video requests are blocked; provider playback is not asserted.
+const {chromium}=require('playwright');
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
+const {execFileSync}=require('node:child_process');
+(async()=>{
+ const base=new URL(process.env.SYMPHONY_URL||'http://127.0.0.1:4000');
+ if(!['127.0.0.1','localhost','[::1]'].includes(base.hostname))throw new Error('Local disposable demo required');
+ const token=process.env.SYMPHONY_DEMO_TOKEN;if(!token||token.length<32)throw new Error('Disposable token required');
+ const out=process.env.SYMPHONY_SCREENSHOTS||'/tmp/symphony-content';await fs.mkdir(out,{recursive:true});
+ const tmp=await fs.mkdtemp(path.join(os.tmpdir(),'symphony-report-'));
+ const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
+ try{
+  const context=await browser.newContext({httpCredentials:{username:'demo',password:token},viewport:{width:1400,height:1000}});
+  let videoRequests=0;await context.route('https://player.vimeo.com/**',route=>{videoRequests++;return route.abort();});
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(new URL('/tasks?task=fixture-1',base).href);await page.locator('.phx-connected').waitFor();
+  await page.getByText('Publish authored update',{exact:true}).click();
+  await page.locator('#add-worklog [name=plan_text]').fill('Inspect cancellation\n  Check concurrent clients\n    Reject stale drafts');
+  await page.locator('#add-worklog [name=acceptance_text]').fill('Keep user changes safe\n  Preserve original revision');
+  await page.locator('#add-worklog [name=validation_text]').fill('Two-browser regression\n  Mobile errors remain visible');
+  await page.getByRole('button',{name:'Publish update',exact:true}).click();
+  await page.locator('.authored-document ul ul ul').filter({hasText:'Reject stale drafts'}).waitFor();
+  await page.getByText('Publish authored update',{exact:true}).click();
+  await page.locator('#add-comment textarea').fill('Please review the concurrency evidence.');
+  await page.getByRole('button',{name:'Post comment',exact:true}).click();
+  await page.locator('.thread-comment').filter({hasText:'Please review'}).waitFor();
+  const root=await page.locator('#add-comment select option').nth(1).getAttribute('value');
+  await page.locator('#add-comment select').selectOption(root);
+  await page.locator('#add-comment textarea').fill('Checked: the stale save is rejected.');
+  await page.getByRole('button',{name:'Post comment',exact:true}).click();
+  await page.locator('.thread-comment .thread-comment').filter({hasText:'Checked:'}).waitFor();
+  const cli=path.resolve('cli/symphonyctl'),env={...process.env,SYMPHONY_URL:base.origin,SYMPHONY_DEMO_TOKEN:token};
+  let task=JSON.parse(execFileSync(cli,['tasks','show','fixture-1','--json'],{env,encoding:'utf8'}));
+  if(task.documents.length!==1||task.comments.length!==2)throw new Error('CLI/UI content mismatch');
+  const artifact=path.join(tmp,'reviewed-agent.json');await fs.writeFile(artifact,JSON.stringify({reference:'Synthetic selected agent artifact, no live agent',summary:'Fixture import validates the operator review path. No external execution is claimed.'}));
+  execFileSync(cli,['tasks','import-agent','fixture-1','--file',artifact,'--revision',String(task.revision)],{env});
+  await page.locator('.imported-report').filter({hasText:'Fixture import validates'}).waitFor();
+  await page.getByText('Add an existing evidence link',{exact:true}).click();
+  await page.locator('#add-link [name=kind]').selectOption('walkthrough');
+  await page.locator('#add-link [name=title]').fill('README reference video');
+  await page.locator('#add-link [name=url]').fill('https://player.vimeo.com/video/1186371009?h=5626e4b899');
+  await page.getByRole('button',{name:'Add link',exact:true}).click();
+  await page.getByRole('button',{name:'Load walkthrough: README reference video',exact:true}).waitFor();
+  if(videoRequests||await page.locator('iframe').count())throw new Error('Video loaded without opt-in');
+  await page.getByText('Add an existing evidence link',{exact:true}).click();
+  await page.locator('.authored-document').evaluate(el=>el.scrollIntoView({block:'start'}));
+  await page.screenshot({path:path.join(out,'08-authored-plan-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('.thread-comment').first().evaluate(el=>el.scrollIntoView({block:'start'}));
+  await page.screenshot({path:path.join(out,'09-comments-mobile.png'),fullPage:true});
+  await page.locator('.imported-report').evaluate(el=>el.scrollIntoView({block:'start'}));
+  await page.screenshot({path:path.join(out,'10-imports-walkthrough-mobile.png'),fullPage:true});
+  await page.getByRole('button',{name:'Load walkthrough: README reference video',exact:true}).click();
+  await page.locator('iframe').waitFor();
+  if(await page.locator('iframe').getAttribute('src')!=='https://player.vimeo.com/video/1186371009?h=5626e4b899')throw new Error('Unsafe embed URL');
+  if(await page.locator('iframe').getAttribute('referrerpolicy')!=='no-referrer')throw new Error('Missing embed boundary');
+  await page.waitForTimeout(100);
+  if(videoRequests!==1)throw new Error('Expected one opt-in video request');
+  if(errors.length)throw new Error(JSON.stringify(errors));
+  console.log(JSON.stringify({passed:true,checks:['nested authored sections','comment/reply','CLI/UI parity','reviewed agent artifact import','mobile content','video opt-in and URL/sandbox boundary'],providerPlayback:'not tested; request blocked',screenshots:out}));
+ }finally{await browser.close();await fs.rm(tmp,{recursive:true,force:true});}
+})().catch(e=>{console.error(e.message);process.exitCode=1;});

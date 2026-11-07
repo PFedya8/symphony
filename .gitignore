@@ -1,3 +1,8 @@
+
+# Private opt-in runtime board state and task workspaces
+.runtime-state/
+.runtime-workspaces/
+
 # Local Go benchmark binary and generated dependencies stay out of source control.
 /bench/go-manual
 __pycache__/
