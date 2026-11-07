@@ -79,6 +79,35 @@ class IdentifierTests(unittest.TestCase):
         self.assertEqual(request.call_args.args[1]['task_id'], 'fixture-1')
         self.assertEqual(request.call_args.args[1]['op'], 'preview')
 
+    def test_board_mutations_forward_fields_and_types(self):
+        cases = [
+            (['tasks', 'create', '--title', 'New work', '--project', 'other', '--revision', '1'],
+             {'op': 'create', 'title': 'New work', 'project': 'other', 'task_id': None}),
+            (['tasks', 'move', 'task-1', '--stage', 'Human Review', '--revision', '2'],
+             {'op': 'move', 'stage': 'Human Review', 'task_id': 'task-1'}),
+            (['tasks', 'plan', 'task-1', '--text', 'Inspect\nVerify', '--revision', '3'],
+             {'op': 'plan', 'text': 'Inspect\nVerify'}),
+            (['tasks', 'check', 'task-1', '--step', '0', '--completed', 'false', '--revision', '4'],
+             {'op': 'check', 'step': 0, 'completed': False}),
+            (['tasks', 'link', 'task-1', '--kind', 'walkthrough', '--title', 'Evidence',
+              '--url', 'https://example.com/guide', '--revision', '5'],
+             {'op': 'link', 'kind': 'walkthrough', 'url': 'https://example.com/guide'}),
+        ]
+        for args, expected in cases:
+            with self.subTest(args=args):
+                request = self.invoke(args, {})
+                self.assertEqual(request.call_args.args[0], 'commands')
+                for key, value in expected.items():
+                    self.assertEqual(request.call_args.args[1][key], value)
+
+    def test_board_and_multitask_reads(self):
+        snapshot = {'board_revision': 2, 'task': {'id': 'fixture-1'}, 'events': [],
+                    'tasks': [{'id': 'fixture-1', 'project': 'demo'}, {'id': 'task-2', 'project': 'other'}]}
+        for args in [['tasks', 'board', '--json'], ['tasks', 'list', '--project', 'other', '--json'],
+                     ['tasks', 'show', 'task-2', '--json'], ['tasks', 'history', 'task-2']]:
+            with self.subTest(args=args):
+                self.invoke(args, snapshot).assert_called_once_with('snapshot')
+
     def test_reported_variants_reach_real_http_with_unchanged_values(self):
         received = []
 

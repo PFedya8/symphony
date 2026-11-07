@@ -420,3 +420,12 @@ requires a private `SYMPHONY_DEMO_DB` path and a random `SYMPHONY_DEMO_TOKEN`
 of at least 32 bytes. Optional `SYMPHONY_DEMO_PORT` (1024–65535, default 4000)
 lets separate local instances use distinct ports; each also needs its own database
 and token. The demo remains loopback-only and never runs real agents.
+
+The manual fixture now provides a multi-task board at `/tasks`, with stages from
+Backlog through Done, project filtering, detail panels, plans/checklists, activity
+and HTTPS evidence links. `cli/symphonyctl tasks board --json` exposes the same
+state. `tasks create`, `move`, `plan`, `check` and `link` use the shared command
+handler with revision/idempotency checks. Tasks have separate attempt budgets;
+worker capacity remains one globally. The board is simulated and project filters
+are not tenant authorization. See the [guide](../docs/MANUAL_DEMO_GUIDE.md),
+including the version-1 to version-2 database migration and rollback instructions.

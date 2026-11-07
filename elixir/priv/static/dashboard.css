@@ -469,3 +469,69 @@ pre,
     padding: 1rem;
   }
 }
+
+/* Fixture task board: original Symphony layout, no third-party assets. */
+body:has(.work-board) { background: #f5f6fa; color: #243044; }
+.app-shell:has(.work-board) { max-width: none; padding: 28px 32px; }
+.work-board { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.board-header { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.board-eyebrow { font-size:11px; font-weight:750; letter-spacing:.13em; color:#69748a; text-transform:uppercase; }
+.board-header h1 { font-size:30px; letter-spacing:-1px; margin:6px 0; }
+.board-header p:not(.board-eyebrow) { color:#758095; font-size:14px; }
+.fixture-label { background:#e9e7fc; color:#6252b2; padding:8px 12px; border-radius:8px; font-size:12px; white-space:nowrap; }
+.board-notice { margin:20px 0; padding:10px 14px; border:1px solid #dedfeb; border-radius:8px; color:#687086; font-size:12px; background:#fff; }
+.board-toolbar { display:flex; gap:20px; align-items:center; margin:20px 0; font-size:12px; color:#6f798b; }
+.work-board label { display:block; font-size:12px; font-weight:600; color:#59647a; }
+.work-board input,.work-board select,.work-board textarea { width:100%; box-sizing:border-box; padding:9px 10px; border:1px solid #dce0e9; border-radius:6px; background:white; color:#243044; margin:5px 0 12px; font:inherit; }
+.board-toolbar select { width:auto; margin:0 0 0 8px; }
+.work-board button { background:#6659cc; color:#fff; border:1px solid transparent; border-radius:6px; padding:9px 13px; font:600 12px/1.3 system-ui; cursor:pointer; box-shadow:none; }
+.work-board button:hover { background:#5144b3; }
+.work-board button:focus-visible,.work-board a:focus-visible,.work-board summary:focus-visible { outline:3px solid #9b91e6; outline-offset:3px; }
+.new-task { margin-left:auto; position:relative; color:#6555c4; }
+.new-task summary { cursor:pointer; font-weight:700; }
+.new-task form { position:absolute; z-index:5; right:0; width:290px; background:white; border:1px solid #dde0e9; box-shadow:0 12px 40px #20243b18; padding:20px; border-radius:10px; }
+.board-columns { display:grid; grid-template-columns:repeat(6,minmax(210px,1fr)); gap:16px; overflow-x:auto; padding-bottom:20px; min-height:65vh; }
+.board-column { border-radius:10px; background:#eef0f5; padding:12px; }
+.board-column h2 { font-size:12px; font-weight:650; display:flex; align-items:center; gap:7px; margin:5px 0 18px; white-space:nowrap; }
+.board-column h2 small { margin-left:auto; color:#929bac; }
+.stage-dot { width:8px; height:8px; border:2px solid #949dad; border-radius:50%; }
+.board-column:nth-child(2) .stage-dot { border-color:#8a78d1; }
+.board-column:nth-child(3) .stage-dot { background:#e8b456; border-color:#e8b456; }
+.board-column:nth-child(4) .stage-dot { background:#698bd9; border-color:#698bd9; }
+.board-column:nth-child(5) .stage-dot { background:#9e78d1; border-color:#9e78d1; }
+.board-column:nth-child(6) .stage-dot { background:#63a995; border-color:#63a995; }
+.task-card { display:block; color:inherit; text-decoration:none; background:white; border:1px solid #e1e4ed; border-radius:8px; padding:14px; margin-bottom:10px; box-shadow:0 2px 4px #20243b04; }
+.task-card:hover { border-color:#a79cdd; transform:translateY(-1px); }
+.card-meta,.card-footer { display:flex; justify-content:space-between; gap:6px; font-size:10px; color:#9099aa; }
+.card-meta span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:55%; }
+.task-card h3 { font-size:13px; line-height:1.55; margin:12px 0 8px; font-weight:650; }
+.task-card p { font-size:11px; line-height:1.6; color:#828b9b; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin-bottom:18px; }
+.empty-column { border:1px dashed #dce0e9; border-radius:8px; padding:20px 8px; font-size:11px; color:#a1a8b6; text-align:center; }
+.task-detail { position:fixed; right:0; top:0; bottom:0; width:min(650px,100%); box-sizing:border-box; z-index:10; background:#fff; box-shadow:-15px 0 80px #252d4830; overflow-y:auto; padding:30px; border-left:1px solid #dce0e9; }
+.task-detail header { display:flex; justify-content:space-between; gap:16px; }
+.task-detail header h2 { font-size:24px; letter-spacing:-.5px; margin-top:12px; line-height:1.4; }
+.close-detail { text-decoration:none; color:#8c94a5; font-size:20px; }
+.detail-meta { display:flex; flex-wrap:wrap; align-items:center; gap:12px; font-size:11px; color:#8a93a3; margin:14px 0 24px; }
+.stage-tag { background:#ece9fb; color:#6c58b2; border-radius:5px; padding:6px 9px; }
+.task-detail > p { font-size:13px; line-height:1.8; color:#697489; }
+.inline-form { display:flex; align-items:center; gap:12px; }
+.inline-form label { flex:1; }
+.inline-form select { margin-bottom:0; }
+.inline-form button { align-self:end; margin-bottom:1px; }
+.detail-section { border-top:1px solid #edf0f5; padding:22px 0; }
+.detail-section h3 { font-size:14px; margin:0 0 18px; }
+.detail-section h3 span { display:block; color:#9ba3b0; font-size:11px; font-weight:400; margin-top:5px; }
+.plan-step { display:flex; align-items:center; gap:12px; margin:12px 0; font-size:13px; color:#5d687d; }
+.work-board .plan-step button { padding:0; width:24px; height:24px; color:#7466c4; background:#f1effb; }
+.run-controls { display:flex; gap:8px; }
+.run-row { padding:14px; border:1px solid #e4e6ee; border-radius:8px; margin:14px 0; font-size:12px; }
+.run-row p { font-size:10px; color:#939baa; overflow-wrap:anywhere; }
+.work-board pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; max-height:300px; overflow:auto; background:#f6f7fa; padding:12px; }
+.work-board .muted,.approval-note { font-size:11px; line-height:1.7; color:#8b93a3; }
+.evidence-link { display:block; text-decoration:none; color:#6958b4; padding:12px; border:1px solid #e8e5f4; border-radius:6px; font-size:13px; margin-bottom:10px; overflow-wrap:anywhere; }
+.evidence-link small { display:block; color:#969dab; margin-top:6px; font-size:10px; }
+.work-board summary { font-size:12px; cursor:pointer; color:#737d90; }
+.activity-event { padding:10px 0; border-bottom:1px solid #f0f1f5; }
+.activity-event summary time { display:block; font-size:10px; color:#a0a7b4; padding:4px 0 0 16px; }
+.board-error { background:#fff0ed; color:#b25749; border:1px solid #f3d1cb; padding:12px; border-radius:7px; }
+@media (max-width:700px) { .app-shell:has(.work-board) { padding:18px 14px; } .board-header { align-items:flex-start; } .board-header h1 { font-size:25px; } .fixture-label { font-size:9px; padding:7px; } .board-toolbar { flex-wrap:wrap; gap:12px; } .board-toolbar > span { display:none; } .board-columns { grid-template-columns:repeat(6,235px); gap:10px; } .task-detail { padding:22px 20px; } .new-task form { width:min(290px,calc(100vw - 55px)); } }

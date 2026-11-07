@@ -172,7 +172,7 @@ defmodule SymphonyElixir.DemoTest do
     alias Exqlite.Sqlite3, as: SQL
     path = Path.join(System.tmp_dir!(), "schema-#{Base.url_encode64(:crypto.strong_rand_bytes(12))}.sqlite")
     {db, nil} = Store.open(path)
-    :ok = SQL.execute(db, "INSERT INTO demo_state VALUES (1, 2, '{}')")
+    :ok = SQL.execute(db, "INSERT INTO demo_state VALUES (1, 999, '{}')")
     :ok = SQL.close(db)
     assert_raise RuntimeError, ~r/Unsupported demo database schema/, fn -> Store.open(path) end
     File.rm!(path)
@@ -196,8 +196,8 @@ defmodule SymphonyElixir.DemoTest do
     basic = "Basic " <> Base.encode64("demo:" <> token)
     conn = Plug.Conn.put_req_header(build_conn(), "authorization", basic)
     assert response(post(conn, "/api/v1/control/commands", %{"op" => "hold"}), 401) == "unauthorized"
-    {:ok, view, html} = live(conn, "/tasks")
-    assert html =~ "simulated agents"
+    {:ok, view, html} = live(conn, "/tasks?task=fixture-1")
+    assert html =~ "Simulated agents"
     assert SymphonyElixirWeb.DemoAuth.init([]) == []
     assert render_click(view, "resume") =~ "resume_not_supported"
     bearer_conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Bearer " <> token)
@@ -231,6 +231,7 @@ defmodule SymphonyElixir.DemoTest do
     socket = %Phoenix.LiveView.Socket{
       assigns: %{
         __changed__: %{},
+        task_id: "fixture-1",
         approval: %{"id" => "expired", "revision" => snapshot()["task"]["revision"], "expires" => System.system_time(:second) - 1}
       }
     }
@@ -260,8 +261,8 @@ defmodule SymphonyElixir.DemoTest do
 
     start_supervised!({SymphonyElixir.HttpServer, port: 0, host: "127.0.0.1"})
     conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
-    {:ok, first, _} = live(conn, "/tasks")
-    {:ok, second, _} = live(conn, "/tasks")
+    {:ok, first, _} = live(conn, "/tasks?task=fixture-1")
+    {:ok, second, _} = live(conn, "/tasks?task=fixture-1")
     first_html = first |> element("button", "preview") |> render_click()
     [_, first_id] = Regex.run(~r/Preview ([^:]+):/, first_html)
     assert has_element?(first, "button", "Approve and start simulation")
@@ -285,5 +286,148 @@ defmodule SymphonyElixir.DemoTest do
       refute Jason.encode!(events) =~ id
       refute render(first) =~ id
     end
+  end
+
+  defp board_command(task_id, op, attrs \\ %{}) do
+    {:ok, data} = request(%{"op" => "snapshot", "task_id" => task_id})
+    revision = if op == "create", do: data["board_revision"], else: data["task"]["revision"]
+    command(op, Map.merge(%{"task_id" => task_id, "revision" => revision}, attrs))
+  end
+
+  test "board create, transitions, checklist and evidence survive restart" do
+    assert length(snapshot()["tasks"]) == 6
+    assert snapshot()["stages"] == ["Backlog", "Todo", "In Progress", "Human Review", "Merging", "Done"]
+    {:ok, task} = board_command("fixture-1", "create", %{"title" => "Second project task", "project" => "new-project"})
+    id = task["id"]
+    assert task["stage"] == "Backlog"
+    assert {:ok, %{"stage" => "Todo"}} = board_command(id, "move", %{"stage" => "Todo"})
+    assert {:ok, _} = board_command(id, "plan", %{"text" => "Inspect input\nVerify output"})
+    assert {:ok, _} = board_command(id, "check", %{"step" => 0, "completed" => true})
+    assert {:ok, _} = board_command(id, "link", %{"kind" => "pull_request", "title" => "User supplied review", "url" => "https://example.com/review/1"})
+    assert {:ok, _} = board_command(id, "link", %{"kind" => "walkthrough", "title" => "Walkthrough", "url" => "https://example.com/demo"})
+    {:ok, before} = request(%{"op" => "snapshot", "task_id" => id})
+    assert hd(before["task"]["plan"])["completed"]
+    assert length(before["task"]["links"]) == 2
+    refute before["task"]["release_verified"]
+    created = Enum.find(before["events"], &(&1["task_id"] == id and &1["op"] == "create"))
+    assert created["before_revision"] == nil
+    assert created["after_revision"] == 1
+    :ok = stop_supervised(SymphonyElixir.AgentRuntimeSupervisor)
+    start_runtime()
+    assert {:ok, ^before} = request(%{"op" => "snapshot", "task_id" => id})
+    assert {:ok, _} = board_command(id, "move", %{"stage" => "Done"})
+    assert {:error, "task_ineligible"} = board_command(id, "preview")
+    assert {:ok, _} = board_command(id, "move", %{"stage" => "Todo"})
+  end
+
+  test "approvals, run lineage and budgets are task scoped with global worker capacity" do
+    {:ok, first} = board_command("fixture-1", "preview")
+    {:ok, second} = board_command("fixture-2", "preview")
+    assert {:error, "approval_required"} = board_command("fixture-2", "start", %{"approval" => first["id"]})
+    {:ok, run} = board_command("fixture-2", "start", %{"approval" => second["id"]})
+    assert run["task_id"] == "fixture-2"
+    assert {:error, "capacity"} = board_command("fixture-1", "start", %{"approval" => first["id"]})
+    assert {:error, "run_active"} = board_command("fixture-2", "move", %{"stage" => "Done"})
+    assert {:error, "invalid_transition"} = board_command("fixture-1", "stop", %{"run_id" => run["id"]})
+    eventually(fn -> hd(snapshot()["runs"])["state"] == "succeeded" end)
+    {:ok, after_run} = request(%{"op" => "snapshot", "task_id" => "fixture-2"})
+    assert after_run["task"]["stage"] == "Human Review"
+    assert {:error, "invalid_retry"} = board_command("fixture-1", "retry", %{"run_id" => run["id"], "approval" => first["id"]})
+    assert {:ok, %{"attempt" => 1, "task_id" => "fixture-1"}} = board_command("fixture-1", "start", %{"approval" => first["id"]})
+    assert length(Task.Supervisor.children(DemoWorkers)) == 1
+  end
+
+  test "board rejects invalid input, unsafe URLs and stale writes" do
+    assert {:error, "not_found"} = request(%{"op" => "snapshot", "task_id" => "missing"})
+    assert {:error, "invalid_text"} = board_command("fixture-1", "create", %{"title" => " ", "project" => "demo"})
+    assert {:error, "invalid_plan"} = board_command("fixture-1", "plan", %{"text" => String.duplicate("x", 161)})
+    assert {:error, "invalid_stage"} = board_command("fixture-1", "move", %{"stage" => "Deploy"})
+    assert {:error, "invalid_step"} = board_command("fixture-1", "check", %{"step" => 99, "completed" => true})
+    assert {:error, "invalid_link_kind"} = board_command("fixture-1", "link", %{"kind" => "script"})
+
+    for url <- ["javascript:alert(1)", "http://example.com", "https://user:pass@example.com"] do
+      assert {:error, "invalid_url"} = board_command("fixture-1", "link", %{"kind" => "walkthrough", "url" => url, "title" => "Unsafe"})
+    end
+
+    assert {:ok, _} = board_command("fixture-1", "move", %{"stage" => "Backlog"})
+    assert {:error, "stale_revision"} = command("move", %{"stage" => "Todo", "revision" => 1})
+  end
+
+  test "legacy single-task snapshot migrates without losing runs or silently replaying approvals" do
+    alias Exqlite.Sqlite3, as: SQL
+    path = Path.join(System.tmp_dir!(), "legacy-#{System.unique_integer([:positive])}.sqlite")
+    {db, nil} = Store.open(path)
+    legacy = %{"task" => snapshot()["task"] |> Map.drop(["stage", "plan", "links", "description"]), "runs" => [], "events" => [], "commands" => %{}, "approvals" => %{"old" => %{"id" => "old"}}}
+    :ok = Store.save(db, legacy)
+    :ok = SQL.execute(db, "UPDATE demo_state SET version=1")
+    :ok = SQL.close(db)
+    previous = Application.fetch_env!(:symphony_elixir, :demo_db)
+    Application.put_env(:symphony_elixir, :demo_db, path)
+    state = SymphonyElixir.Demo.open([])
+    assert map_size(state.data["tasks"]) == 1
+    assert state.data["tasks"]["fixture-1"]["stage"] == "Todo"
+    assert state.data["approvals"] == %{}
+    :ok = SQL.close(state.db)
+    Application.put_env(:symphony_elixir, :demo_db, previous)
+    File.rm!(path)
+  end
+
+  test "board and task detail edits share state with the real HTTP CLI" do
+    token = String.duplicate("board-browser-test-", 3)
+    Application.put_env(:symphony_elixir, :demo_token, token)
+    Application.put_env(:symphony_elixir, :demo_server, DemoOwner)
+    endpoint_config = Application.get_env(:symphony_elixir, @endpoint)
+
+    on_exit(fn ->
+      Application.delete_env(:symphony_elixir, :demo_token)
+      Application.delete_env(:symphony_elixir, :demo_server)
+      Application.put_env(:symphony_elixir, @endpoint, endpoint_config)
+    end)
+
+    start_supervised!({SymphonyElixir.HttpServer, port: 0, host: "127.0.0.1"})
+    conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
+    {:ok, board, html} = live(conn, "/tasks")
+    assert html =~ "Backlog" and html =~ "Merging"
+    refute has_element?(board, ".task-detail")
+    render_change(board, "filter", %{"project" => "sandbox"})
+    assert has_element?(board, "#card-fixture-6")
+    refute has_element?(board, "#card-fixture-1")
+    board |> form("#create-task", %{title: "Browser-created task", project: "sandbox", description: "Synthetic acceptance test"}) |> render_submit()
+    task = Enum.find(snapshot()["tasks"], &(&1["title"] == "Browser-created task"))
+    assert has_element?(board, ".task-detail")
+    board |> form("#move-task", %{stage: "Todo"}) |> render_submit()
+    board |> form("#edit-plan", %{text: "Review constraints\nVerify browser behavior"}) |> render_submit()
+    board |> element("button[phx-click=check][phx-value-step='0']") |> render_click()
+    assert render_click(board, "check", %{"step" => "bad", "completed" => "true"}) =~ "invalid_step"
+    board |> form("#add-link", %{kind: "walkthrough", title: "Demo guide", url: "https://example.com/guide"}) |> render_submit()
+    assert has_element?(board, "a[href='https://example.com/guide']")
+    cli = Path.expand("../cli/symphonyctl")
+    env = [{"SYMPHONY_URL", "http://127.0.0.1:#{SymphonyElixir.HttpServer.bound_port()}"}, {"SYMPHONY_DEMO_TOKEN", token}]
+    {output, 0} = System.cmd(cli, ["tasks", "show", task["id"], "--json"], env: env)
+    shown = Jason.decode!(output)
+    assert shown["stage"] == "Todo"
+    assert hd(shown["plan"])["completed"]
+    assert length(shown["links"]) == 1
+    {_output, 0} = System.cmd(cli, ["tasks", "move", task["id"], "--stage", "Human Review", "--revision", to_string(shown["revision"])], env: env)
+    eventually(fn -> has_element?(board, ".stage-tag", "Human Review") end)
+    {:ok, invalid, _} = live(conn, "/tasks?task=missing")
+    assert render(invalid) =~ "Task not found"
+  end
+
+  test "board resource limits reject additional tasks and evidence without overwriting state" do
+    for number <- 1..94 do
+      assert {:ok, _} = board_command("fixture-1", "create", %{"title" => "Bounded task #{number}", "project" => "limits"})
+    end
+
+    assert length(snapshot()["tasks"]) == 100
+    assert {:error, "task_limit"} = board_command("fixture-1", "create", %{"title" => "Overflow", "project" => "limits"})
+
+    for number <- 1..10 do
+      assert {:ok, _} = board_command("fixture-1", "link", %{"kind" => "walkthrough", "url" => "https://example.com/#{number}", "title" => "Evidence"})
+    end
+
+    assert {:error, "link_limit"} = board_command("fixture-1", "link", %{"kind" => "walkthrough", "url" => "https://example.com/overflow", "title" => "Overflow"})
+    assert length(snapshot()["task"]["links"]) == 10
+    assert {:error, "invalid_plan"} = board_command("fixture-1", "plan", %{"text" => Enum.map_join(1..21, "\n", &"Step #{&1}")})
   end
 end

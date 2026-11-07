@@ -22,7 +22,7 @@ def request(path, payload=None):
 
 def normalize_identifier(argv):
     """Separate options from opaque IDs and bind option values before argparse."""
-    value_options = {'--approval', '--revision', '--key', '--reason'}
+    value_options = {'--approval', '--revision', '--key', '--reason', '--title', '--project', '--description', '--stage', '--step', '--completed', '--url', '--kind', '--text'}
     flags = {'--json', '--dry-run', '--follow', '-h', '--help'}
     known = value_options | flags
 
@@ -72,29 +72,48 @@ def main():
     parser.add_argument('--key', default=str(uuid.uuid4()))
     parser.add_argument('--reason')
     parser.add_argument('--follow', action='store_true')
+    for field in ['title', 'project', 'description', 'stage', 'url', 'kind', 'text']:
+        parser.add_argument('--' + field)
+    parser.add_argument('--step', type=int)
+    parser.add_argument('--completed', choices=['true', 'false'])
     args = parser.parse_args(normalize_identifier(sys.argv[1:]))
     if args.reason:
         parser.error('--reason text persistence is not supported by the fixed-output fixture demo')
     if args.group == 'capabilities':
         result = request('capabilities')
-    elif args.group == 'sync' or args.action in ['start', 'hold', 'release-hold', 'stop', 'retry', 'resume']:
+    elif args.group == 'tasks' and args.action == 'board':
+        result = request('snapshot')
+    elif args.group == 'sync' or args.action in ['start', 'hold', 'release-hold', 'stop', 'retry', 'resume', 'create', 'move', 'check', 'link', 'plan']:
         if args.revision is None:
             parser.error('mutations require --revision from tasks show')
         op = 'sync' if args.group == 'sync' else args.action
         if args.dry_run:
             op = 'preview'
-        result = request('commands', {'op': op, 'revision': args.revision,
+        payload = {'op': op, 'revision': args.revision,
             'key': args.key, 'approval': args.approval,
             'task_id': args.id if args.group == 'tasks' else None,
-            'run_id': args.id if args.group == 'runs' else None})
+            'run_id': args.id if args.group == 'runs' else None}
+        for field in ['title', 'project', 'description', 'stage', 'step', 'url', 'kind', 'text']:
+            value = getattr(args, field)
+            if value is not None:
+                payload[field] = value
+        if args.completed is not None:
+            payload['completed'] = args.completed == 'true'
+        result = request('commands', payload)
     elif args.action in ['list', 'show', 'history', 'logs']:
         cursor = 0
         while True:
             snapshot = request('snapshot')
             if args.group == 'tasks':
-                if args.id and args.id != snapshot['task']['id']:
+                tasks = [task for task in snapshot.get('tasks', [snapshot['task']])
+                         if (not args.id or task['id'] == args.id) and
+                         (not args.project or task['project'] == args.project)]
+                if args.id and not tasks:
                     raise ValueError('not_found')
-                result = snapshot['events'] if args.action == 'history' else snapshot['task']
+                result = tasks[0] if args.id else tasks
+                if args.action == 'history':
+                    result = [event for event in snapshot['events']
+                              if not args.id or event.get('task_id', 'fixture-1') == args.id]
             else:
                 runs = [r for r in snapshot['runs'] if not args.id or r['id'] == args.id]
                 if args.id and not runs:
@@ -114,7 +133,7 @@ def main():
     if not args.json and args.action == 'list' and args.group in ('tasks', 'runs'):
         rows = result if isinstance(result, list) else [result]
         for row in rows:
-            print(f"{row['id']}\t{row.get('state', row.get('status', 'unknown'))}\t{row.get('title', '')}")
+            print(f"{row['id']}\t{row.get('state', row.get('stage', row.get('status', 'unknown')))}\t{row.get('title', '')}")
     else:
         print(json.dumps(result, indent=2 if not args.json else None))
 

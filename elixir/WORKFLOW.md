@@ -335,3 +335,8 @@ See ../docs/DEVOPS_SLICE_PROGRESS.md for its separate manual control contract. -
 <!-- The separate demo.exs launcher uses demo-workflow.md, remains loopback-only,
      and accepts SYMPHONY_DEMO_PORT (1024–65535) as a port override.
      See ../docs/MANUAL_DEMO_GUIDE.md for isolated fixture setup. -->
+
+<!-- The fixture board now stores multiple tasks/projects in schema version 2.
+     Project selection is a UI filter, not authorization or a real tracker import.
+     Simulation stage changes never imply a real PR merge or deployment.
+     See ../docs/MANUAL_DEMO_GUIDE.md before opening an older demo database. -->
