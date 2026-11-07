@@ -34,7 +34,40 @@ defmodule SymphonyElixirWeb.Layouts do
             if (!window.Phoenix || !window.LiveView) return;
 
             var liveSocket = new window.LiveView.LiveSocket("/live", window.Phoenix.Socket, {
-              params: {_csrf_token: csrfToken}
+              params: {_csrf_token: csrfToken},
+              hooks: {TaskBoard: {
+                mounted() {
+                  this.drag = null;
+                  this.start = event => {
+                    const card = event.target.closest(".task-card");
+                    if (!card) return;
+                    this.drag = {task_id: card.dataset.taskId, revision: card.dataset.revision};
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", card.dataset.taskId);
+                  };
+                  this.over = event => {
+                    if (this.drag && event.target.closest(".board-column")) event.preventDefault();
+                  };
+                  this.drop = event => {
+                    const column = event.target.closest(".board-column");
+                    if (!this.drag || !column) return;
+                    event.preventDefault();
+                    this.pushEvent("board-move", {...this.drag, stage: column.dataset.stage});
+                    this.drag = null;
+                  };
+                  this.end = () => { this.drag = null; };
+                  this.el.addEventListener("dragstart", this.start);
+                  this.el.addEventListener("dragover", this.over);
+                  this.el.addEventListener("drop", this.drop);
+                  this.el.addEventListener("dragend", this.end);
+                },
+                destroyed() {
+                  this.el.removeEventListener("dragstart", this.start);
+                  this.el.removeEventListener("dragover", this.over);
+                  this.el.removeEventListener("drop", this.drop);
+                  this.el.removeEventListener("dragend", this.end);
+                }
+              }}
             });
 
             liveSocket.connect();

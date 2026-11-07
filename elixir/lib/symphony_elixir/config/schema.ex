@@ -289,7 +289,25 @@ defmodule SymphonyElixir.Config.Schema do
     end
   end
 
+  defmodule Board do
+    @moduledoc false
+    use Ecto.Schema
+    import Ecto.Changeset
+    @primary_key false
+    embedded_schema do
+      field(:enabled, :boolean, default: false)
+      field(:database, :string)
+    end
+
+    @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
+    def changeset(schema, attrs) do
+      changeset = cast(schema, attrs, [:enabled, :database])
+      if get_field(changeset, :enabled), do: validate_required(changeset, [:database]), else: changeset
+    end
+  end
+
   embedded_schema do
+    embeds_one(:board, Board, on_replace: :update, defaults_to_struct: true)
     embeds_one(:tracker, Tracker, on_replace: :update, defaults_to_struct: true)
     embeds_one(:polling, Polling, on_replace: :update, defaults_to_struct: true)
     embeds_one(:workspace, Workspace, on_replace: :update, defaults_to_struct: true)
@@ -384,6 +402,7 @@ defmodule SymphonyElixir.Config.Schema do
   defp changeset(attrs) do
     %__MODULE__{}
     |> cast(attrs, [])
+    |> cast_embed(:board, with: &Board.changeset/2)
     |> cast_embed(:tracker, with: &Tracker.changeset/2)
     |> cast_embed(:polling, with: &Polling.changeset/2)
     |> cast_embed(:workspace, with: &Workspace.changeset/2)

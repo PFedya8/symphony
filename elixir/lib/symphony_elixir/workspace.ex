@@ -399,9 +399,16 @@ defmodule SymphonyElixir.Workspace do
 
     Logger.info("Running workspace hook hook=#{hook_name} #{issue_log_context(issue_context)} workspace=#{workspace} worker_host=local")
 
+    owner = self()
+    managed = Process.get(:symphony_managed_processes, false) or Config.settings!().board.enabled
+
     task =
       Task.async(fn ->
-        System.cmd("sh", ["-lc", command], cd: workspace, stderr_to_stdout: true)
+        if managed do
+          SymphonyElixir.LocalProcesses.run_hook(command, workspace, owner)
+        else
+          System.cmd("sh", ["-lc", SymphonyElixir.ChildEnvironment.command(command)], cd: workspace, stderr_to_stdout: true, env: SymphonyElixir.ChildEnvironment.system_env())
+        end
       end)
 
     case Task.yield(task, timeout_ms) do

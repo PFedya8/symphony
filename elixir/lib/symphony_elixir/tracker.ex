@@ -47,11 +47,13 @@ defmodule SymphonyElixir.Tracker do
   """
   @spec bind_agent_tools() :: map()
   def bind_agent_tools do
-    tracker_settings = Config.settings!().tracker
+    config = Config.settings!()
+    tracker_settings = config.tracker
     adapter = adapter_for_settings!(tracker_settings)
 
     %{
       adapter: adapter,
+      board_policy: board_policy(config),
       tracker_settings: tracker_settings,
       tool_specs: adapter_agent_tool_specs(adapter),
       secret_environment_names: adapter_secret_environment_names(adapter, tracker_settings)
@@ -60,18 +62,44 @@ defmodule SymphonyElixir.Tracker do
 
   @spec execute_bound_agent_tool(map(), String.t(), term(), keyword()) :: map()
   def execute_bound_agent_tool(
-        %{adapter: adapter, tracker_settings: tracker_settings},
+        %{adapter: adapter, tracker_settings: tracker_settings} = binding,
         tool,
         arguments,
         opts \\ []
       ) do
-    execute_agent_tool_with_adapter(
-      adapter,
-      tool,
-      arguments,
-      Keyword.put(opts, :tracker_settings, tracker_settings)
-    )
+    if board_tool_allowed?(Map.get(binding, :board_policy, :standard), tool, arguments) do
+      execute_agent_tool_with_adapter(adapter, tool, arguments, Keyword.put(opts, :tracker_settings, tracker_settings))
+    else
+      unsupported_agent_tool_response("board policy: configured-project GitLab issue/MR reads only")
+    end
   end
+
+  defp board_policy(%{board: %{enabled: false}}), do: :standard
+
+  defp board_policy(config) do
+    project =
+      case config.tracker.provider["project_path"] do
+        "$" <> name -> System.get_env(name) || System.get_env("GITLAB_PROJECT_PATH")
+        nil -> System.get_env("GITLAB_PROJECT_PATH")
+        value -> value
+      end
+
+    {:gitlab_read_only, project || ""}
+  end
+
+  defp board_tool_allowed?(:standard, _, _), do: true
+
+  defp board_tool_allowed?({:gitlab_read_only, project}, "gitlab_api", %{"method" => method, "path" => path} = args)
+       when is_binary(method) and is_binary(path) do
+    prefix = "/projects/" <> URI.encode_www_form(project)
+    suffix = String.replace_prefix(path, prefix, "")
+
+    project != "" and String.upcase(String.trim(method)) == "GET" and args["body"] in [nil, %{}] and
+      String.starts_with?(path, prefix <> "/") and
+      Regex.match?(~r/\A\/(issues|merge_requests)(\/[1-9][0-9]*)?(\/(notes|changes|commits|discussions))?\z/, suffix)
+  end
+
+  defp board_tool_allowed?(_, _, _), do: false
 
   @spec validate_config(map()) :: :ok | {:error, term()}
   def validate_config(%{kind: kind} = tracker_settings) do

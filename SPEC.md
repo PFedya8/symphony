@@ -2318,3 +2318,28 @@ poll-driven dispatch and automatic continuation with explicit approved commands.
 It stores fixture execution records durably, reconciles unknown active records as
 interrupted, and never infers tracker completion from run success. This extension
 is disabled by default and does not change the core tracker-mode lifecycle.
+
+## Optional manual fixture board
+
+The Elixir demonstration may expose a durable multi-task board through the same
+service as its CLI. Board stages are organizational labels and remain distinct
+from tracker state and run state. Fixture execution must be explicitly labeled,
+must not invoke real agents/tools, and must not assert real PR, merge or release
+outcomes. The existing orchestrator remains the single worker owner. Approval,
+revision and idempotency checks apply to task mutations; approvals and retry
+lineage are task-scoped, while configured worker capacity applies globally.
+Project filters alone do not establish authorization boundaries. Evidence links
+supplied by an operator must remain marked unverified until actual evidence is
+obtained. This optional fixture does not change the production tracker contract.
+
+### Optional manually approved GitLab board
+
+An implementation may expose an opt-in, loopback-only durable GitLab task board
+owned by the existing orchestrator. In this mode polling discovers issues but
+never autonomously dispatches them: a revision/source-bound human approval reserves
+one bounded local worker attempt. Revalidate the source before spawning; never
+resume active reservations or automatically retry after restart/failure. Preserve
+normal autonomous scheduling when the mode is disabled. Isolate provider project,
+database and workspace ownership, fence changed runtime configuration, restrict
+board-bound provider tools to project-scoped reads, and distinguish observed worker
+completion from verified review/merge. See docs/BOARD_API_CONTRACT.md.

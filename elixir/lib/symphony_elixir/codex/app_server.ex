@@ -195,21 +195,21 @@ defmodule SymphonyElixir.Codex.AppServer do
     if is_nil(executable) do
       {:error, :bash_not_found}
     else
-      port =
-        Port.open(
-          {:spawn_executable, String.to_charlist(executable)},
-          [
-            :binary,
-            :exit_status,
-            :stderr_to_stdout,
-            args: [~c"-lc", String.to_charlist(local_launch_command(dynamic_tool_binding))],
-            cd: String.to_charlist(workspace),
-            env: tracker_secret_port_env(dynamic_tool_binding),
-            line: @port_line_bytes
-          ]
-        )
+      opts = [
+        :binary,
+        :exit_status,
+        :stderr_to_stdout,
+        args: [~c"-lc", String.to_charlist(local_launch_command(dynamic_tool_binding))],
+        cd: String.to_charlist(workspace),
+        env: tracker_secret_port_env(dynamic_tool_binding),
+        line: @port_line_bytes
+      ]
 
-      {:ok, port}
+      if Process.get(:symphony_managed_processes, false) or Config.settings!().board.enabled do
+        SymphonyElixir.LocalProcesses.open(executable, opts)
+      else
+        {:ok, Port.open({:spawn_executable, String.to_charlist(executable)}, opts)}
+      end
     end
   end
 
@@ -237,23 +237,10 @@ defmodule SymphonyElixir.Codex.AppServer do
     |> Enum.join(" && ")
   end
 
-  defp tracker_secret_port_env(dynamic_tool_binding) do
-    dynamic_tool_binding.secret_environment_names
-    |> valid_environment_names()
-    |> Enum.map(fn name -> {String.to_charlist(name), false} end)
-  end
+  defp tracker_secret_port_env(binding), do: SymphonyElixir.ChildEnvironment.port_env(binding.secret_environment_names)
 
-  defp tracker_secret_unset_command(dynamic_tool_binding) do
-    case dynamic_tool_binding.secret_environment_names |> valid_environment_names() do
-      [] -> nil
-      names -> "unset " <> Enum.join(names, " ")
-    end
-  end
-
-  defp valid_environment_names(names) do
-    Enum.filter(names, fn name ->
-      is_binary(name) and String.match?(name, ~r/^[A-Za-z_][A-Za-z0-9_]*$/)
-    end)
+  defp tracker_secret_unset_command(binding) do
+    "unset " <> Enum.join(SymphonyElixir.ChildEnvironment.names(binding.secret_environment_names), " ")
   end
 
   defp port_metadata(port, worker_host) when is_port(port) do
@@ -970,7 +957,14 @@ defmodule SymphonyElixir.Codex.AppServer do
 
       _ ->
         try do
-          Port.close(port)
+          case Port.info(port, :connected) do
+            {:connected, owner} ->
+              if owner == Process.whereis(SymphonyElixir.LocalProcesses), do: SymphonyElixir.LocalProcesses.close(port), else: Port.close(port)
+
+            _ ->
+              :ok
+          end
+
           :ok
         rescue
           ArgumentError ->

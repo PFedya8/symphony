@@ -74,7 +74,7 @@ def main():
                 request('/tasks', auth='', status=401)
                 request('/api/v1/control/snapshot', auth='', status=401)
                 request('/api/v1/control/commands', {'op': 'hold'}, auth=basic, status=401)
-                assert 'Symphony task queue' in request('/tasks', auth=basic)
+                assert 'Task board' in request('/tasks', auth=basic)
                 assert api('snapshot')['runs'] == []
                 preview = api('commands', {'op': 'preview', 'revision': 1, 'key': 'preview'})
                 command = {'op': 'start', 'revision': 1, 'key': 'start', 'approval': preview['id']}

@@ -161,6 +161,8 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert {:error, {:missing_workflow_file, ^missing_path, :enoent}} =
              WorkflowStore.settings()
 
+    assert SymphonyElixirWeb.DemoAuth.token() == nil
+
     assert {:error, {:missing_workflow_file, ^missing_path, :enoent}} =
              WorkflowStore.force_reload()
 
