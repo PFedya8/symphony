@@ -279,3 +279,5 @@ shared CLI-to-Go HTTP/SQLite board contract passed, including missing-artifact
 receipt replay. The final Elixir `make all` covers the existing token, immutable
 provider scope, production execution gate and containment-characterization tests.
 GitHub check results for the exact pushed merge head are recorded on PR #5.
+
+The first merged-head GitHub run also confirmed 364 tests passing and 100% coverage, then failed Dialyzer with `Old PLT file`. Its build cache key included only OS and `mix.lock`, allowing incompatible BEAM runtime artifacts to be restored. CI now fingerprints the exact `elixir --version` output (including Erlang/ERTS) and restricts cache fallback to that runtime; the cache namespace was bumped to discard incompatible prior entries.
