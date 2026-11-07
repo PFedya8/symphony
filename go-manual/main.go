@@ -29,7 +29,7 @@ func handler(s *service, token string) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if r.URL.Path == "/tasks" && r.Method == "GET" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-src https://player.vimeo.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'none'")
 			io.WriteString(w, page)
 			return
 		}
@@ -52,7 +52,7 @@ func handler(s *service, token string) http.Handler {
 				w.WriteHeader(415)
 				return
 			}
-			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+			dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
 			if dec.Decode(&req) != nil || req == nil {
 				http.Error(w, "invalid json", 400)
 				return
@@ -73,6 +73,9 @@ func handler(s *service, token string) http.Handler {
 				return
 			}
 			req["op"] = view
+			if taskID := r.URL.Query().Get("task_id"); taskID != "" {
+				req["task_id"] = taskID
+			}
 			if raw, ok := r.URL.Query()["cursor"]; ok {
 				n, err := strconv.ParseInt(raw[0], 10, 53)
 				if err != nil {
@@ -129,7 +132,17 @@ func run() error {
 	if project == "" {
 		project = "demo"
 	}
-	s, err := openProject(path, project)
+	var discovery *gitLabDiscovery
+	if mode := os.Getenv("SYMPHONY_GO_MODE"); mode != "" && mode != "fixture" {
+		if mode != "gitlab_discovery" {
+			return errors.New("unsupported mode; real execution is unavailable")
+		}
+		discovery, err = newGitLabDiscovery(os.Getenv("SYMPHONY_GITLAB_ENDPOINT"), os.Getenv("SYMPHONY_GITLAB_PROJECT"), os.Getenv("SYMPHONY_GITLAB_TOKEN"))
+		if err != nil {
+			return err
+		}
+	}
+	s, err := openConfigured(path, project, discovery)
 	if err != nil {
 		return err
 	}
@@ -138,7 +151,10 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go func() { <-ctx.Done(); server.Close() }()
-	log.Printf("fixture simulator listening on %s", listener.Addr())
+	log.Printf("%s board listening on %s", s.mode(), listener.Addr())
+	if discovery != nil {
+		go s.pollDiscovery(ctx)
+	}
 	if err = server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve: %w", err)
 	}

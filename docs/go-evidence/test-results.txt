@@ -84,3 +84,25 @@ Final CLI policy reconciliation with PR #2 b1050cb:
   313 tests, zero failures, six skipped; configured coverage 100%;
   formatting, specs, Credo and Dialyzer passed. No merge published.
   Browser code unchanged in this follow-up; screenshots and benchmark not rerun.
+
+Go board extension aligned with PR #4 fb96c957:
+  Shared CLI and PR4 regression suite match fb96c957 byte-for-byte.
+  Both CLI suites: 8 + 19 tests passed on Python 3.12 and 3.13.
+  Go full race suite passed: 90.1% statement coverage; vet/build/format passed.
+  New board tests cover task/approval/run isolation, bounds, legacy migration,
+  interrupted recovery, import receipt replay and emergency holds at capacity.
+  Synthetic TLS GitLab tests cover scope, response limits, redirect rejection,
+  errors, refresh/persistence, credential rotation, fixture/discovery isolation,
+  and explicit rejection of imported-task execution.
+  Real shared CLI -> HTTP -> SQLite board contract passed, including authored
+  content, second project label/filter and offline artifact receipt recovery.
+  Three real Chromium suites passed on fresh databases: board editing/content,
+  stale drafts and safe rendering/mobile; stop/hold/retry; two-tab private approvals.
+  Eleven current screenshots saved in docs/go-evidence/board; desktop/mobile
+  screenshots visually inspected. Historical screenshot files preserved.
+  Empty discovery board rendering tested with a synthetic browser response.
+  No live provider, real Codex worker, external video playback or public deployment
+  tested. No resource benchmark rerun. Existing comparison.json SHA256 unchanged:
+  aa1973ec4f5c06fb42c27f6cfb1db1eeb681fb82be8ffb19a8f5893ccfd5d949.
+  The earlier merged Elixir 313-test result above is historical (PR2 pair), not
+  a claim that the new PR4 board has been merged/tested with this branch.

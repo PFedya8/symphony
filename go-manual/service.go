@@ -16,20 +16,26 @@ import (
 
 type obj = map[string]any
 type state struct {
-	Task      obj            `json:"task"`
-	Runs      []obj          `json:"runs"`
-	Events    []obj          `json:"events"`
-	Commands  map[string]obj `json:"commands"`
-	Approvals map[string]obj `json:"approvals"`
+	Tasks          map[string]obj `json:"tasks"`
+	BoardRevision  float64        `json:"board_revision"`
+	Project        string         `json:"project"`
+	DiscoveryScope string         `json:"discovery_scope,omitempty"`
+	DiscoveryError string         `json:"discovery_error,omitempty"`
+	Task           obj            `json:"task"`
+	Runs           []obj          `json:"runs"`
+	Events         []obj          `json:"events"`
+	Commands       map[string]obj `json:"commands"`
+	Approvals      map[string]obj `json:"approvals"`
 }
 type service struct {
-	mu       sync.Mutex
-	db       *sql.DB
-	data     state
-	workers  map[string]*time.Timer
-	closed   bool
-	duration time.Duration
-	fault    error
+	mu        sync.Mutex
+	db        *sql.DB
+	data      state
+	workers   map[string]*time.Timer
+	closed    bool
+	duration  time.Duration
+	fault     error
+	discovery *gitLabDiscovery
 }
 
 func id() string {
@@ -42,7 +48,9 @@ func id() string {
 func active(v any) bool                         { return v == "starting" || v == "running" || v == "stopping" }
 func openService(path string) (*service, error) { return openProject(path, "demo") }
 
-func openProject(path, project string) (*service, error) {
+func openProject(path, project string) (*service, error) { return openConfigured(path, project, nil) }
+
+func openConfigured(path, project string, discovery *gitLabDiscovery) (*service, error) {
 	if len(project) == 0 || len(project) > 100 {
 		return nil, fmt.Errorf("project must contain 1..100 bytes")
 	}
@@ -51,7 +59,7 @@ func openProject(path, project string) (*service, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &service{db: db, workers: map[string]*time.Timer{}, duration: 3 * time.Second}
+	s := &service{db: db, discovery: discovery, workers: map[string]*time.Timer{}, duration: 3 * time.Second}
 	fail := func(e error) (*service, error) { db.Close(); return nil, e }
 	if _, err = db.Exec("CREATE TABLE IF NOT EXISTS demo_state (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL, body TEXT NOT NULL)"); err != nil {
 		return fail(err)
@@ -61,9 +69,16 @@ func openProject(path, project string) (*service, error) {
 	err = db.QueryRow("SELECT version,body FROM demo_state WHERE id=1").Scan(&version, &body)
 	if err == sql.ErrNoRows {
 		s.data = state{Task: obj{"id": "fixture-1", "tracker": "fixture", "project": project, "external_id": "1", "title": "Simulated timeout change", "status": "opened", "revision": float64(1), "hold": false, "dependencies": []any{}, "release_verified": false}, Runs: []obj{}, Events: []obj{}, Commands: map[string]obj{}, Approvals: map[string]obj{}}
+		if discovery != nil {
+			s.data.Tasks = map[string]obj{}
+			s.data.Task = obj{}
+			s.data.BoardRevision = 1
+			s.data.DiscoveryScope = discovery.Scope()
+			s.data.Project = project
+		}
 	} else if err != nil {
 		return fail(err)
-	} else if version != 1 {
+	} else if version != 1 && version != 2 {
 		return fail(fmt.Errorf("unsupported schema %d", version))
 	} else if err = json.Unmarshal(body, &s.data); err != nil {
 		return fail(err)
@@ -71,9 +86,21 @@ func openProject(path, project string) (*service, error) {
 	if s.data.Task == nil || s.data.Commands == nil || s.data.Approvals == nil {
 		return fail(fmt.Errorf("invalid snapshot"))
 	}
-	if s.data.Task["project"] != project {
+	if s.data.Project != "" && s.data.Project != project || s.data.Project == "" && s.data.Task["project"] != project {
 		return fail(fmt.Errorf("database belongs to a different project"))
 	}
+	expectedScope := ""
+	if discovery != nil {
+		expectedScope = discovery.Scope()
+	}
+	if s.data.DiscoveryScope != expectedScope {
+		return fail(fmt.Errorf("database discovery scope mismatch; use an isolated database"))
+	}
+	s.data.Project = project
+	if discovery == nil {
+		migrateBoard(&s.data)
+	}
+	s.data.Approvals = map[string]obj{}
 	for _, r := range s.data.Runs {
 		if active(r["state"]) {
 			r["state"] = "interrupted"
@@ -90,7 +117,7 @@ func (s *service) save(d state) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("INSERT OR REPLACE INTO demo_state VALUES(1,1,?)", string(body))
+	_, err = s.db.Exec("INSERT OR REPLACE INTO demo_state VALUES(1,2,?)", string(body))
 	return err
 }
 func (s *service) close() {
@@ -113,7 +140,7 @@ func audit(d *state, op, actor string, before any, result obj) {
 	if len(d.Events) > 0 {
 		cursor = d.Events[len(d.Events)-1]["cursor"].(float64) + 1
 	}
-	d.Events = append(d.Events, obj{"cursor": cursor, "op": op, "actor": actor, "before_revision": before, "after_revision": d.Task["revision"], "result": result, "at": time.Now().UTC().Format(time.RFC3339Nano)})
+	d.Events = append(d.Events, obj{"cursor": cursor, "task_id": d.Task["id"], "op": op, "actor": actor, "before_revision": before, "after_revision": d.Task["revision"], "result": result, "at": time.Now().UTC().Format(time.RFC3339Nano)})
 	if len(d.Events) > 1000 {
 		d.Events = d.Events[len(d.Events)-1000:]
 	}
@@ -131,7 +158,10 @@ func eligible(d *state) string {
 	if d.Task["hold"] == true {
 		return "held"
 	}
-	if d.Task["status"] != "opened" {
+	if d.Task["execution_supported"] == false {
+		return "runtime_unavailable"
+	}
+	if d.Task["status"] != "opened" || terminalStage(d.Task["stage"]) {
 		return "task_ineligible"
 	}
 	if len(d.Task["dependencies"].([]any)) > 0 {
@@ -146,7 +176,8 @@ func eligible(d *state) string {
 }
 
 // Once ordinary history fills, only monotone safety changes may add records.
-// No release/start/retry can follow, so at most one hold and one stop are added.
+// No release/start/retry/create can follow: at most 100 holds and one stop
+// can be added for this bounded board. Receipts are never evicted.
 // Replay/conflict, authentication and revision checks still run before this gate.
 func emergency(req obj, d *state) bool {
 	switch req["op"] {
@@ -182,24 +213,35 @@ func (s *service) request(req obj) (any, string) {
 	op, _ := req["op"].(string)
 	switch op {
 	case "capabilities":
-		return obj{"simulated": true, "manual": true, "resume": false, "max_agents": 1, "max_attempts": 3}, ""
+		return obj{"simulated": s.discovery == nil, "manual": true, "resume": false, "max_agents": 1, "max_attempts": 3, "max_tasks": 100, "stages": boardStages, "board": true, "runtime_execution": false, "gitlab_discovery": s.discovery != nil, "execution_owner": map[bool]string{true: "none", false: "fixture_simulator"}[s.discovery != nil]}, ""
+	case "import-receipt":
+		return importReceipt(req, &s.data)
 	case "snapshot":
 		d := clone(s.data)
+		if len(d.Tasks) == 0 {
+			return obj{"task": nil, "tasks": []obj{}, "stages": boardStages, "board_revision": d.BoardRevision, "mode": s.mode(), "runtime_error": d.DiscoveryError, "runs": []obj{}, "events": []obj{}, "approval_valid": false}, ""
+		}
+		if code := scopeTask(&d, req); code != "" {
+			return nil, code
+		}
 		actions := []string{"preview", "hold"}
+		if d.Task["execution_supported"] == false {
+			actions = []string{"hold"}
+		}
 		if d.Task["hold"] == true {
 			actions = []string{"release-hold"}
 		}
 		d.Task["allowed_actions"] = actions
 		approvalID, _ := req["approval"].(string)
 		approval := d.Approvals[approvalID]
-		valid := approval != nil && approval["revision"] == d.Task["revision"] && approval["expires"].(float64) > float64(time.Now().Unix())
+		valid := approval != nil && approval["task_id"] == d.Task["id"] && approval["revision"] == d.Task["revision"] && approval["expires"].(float64) > float64(time.Now().Unix())
 		for _, run := range d.Runs {
 			delete(run, "approval")
 		}
 		for _, event := range d.Events {
 			publicEvent(event)
 		}
-		return obj{"task": d.Task, "runs": d.Runs, "events": d.Events, "approval_valid": valid}, ""
+		return obj{"task": d.Task, "tasks": boardTasks(d), "stages": boardStages, "board_revision": d.BoardRevision, "mode": s.mode(), "runtime_error": d.DiscoveryError, "runs": d.Runs, "events": d.Events, "approval_valid": valid}, ""
 	case "events":
 		cursor := float64(0)
 		if v, ok := req["cursor"]; ok {
@@ -245,23 +287,37 @@ func (s *service) request(req obj) (any, string) {
 		return nil, "invalid_request"
 	}
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256(encoded))
+	identity, code := importIdentity(req)
+	if code != "" {
+		return nil, code
+	}
 	if old, ok := s.data.Commands[key]; ok {
-		if old["fingerprint"] == fingerprint {
+		if old["fingerprint"] == fingerprint || identity != "" && old["import_identity"] == identity {
 			return old["result"], ""
 		}
 		return nil, "idempotency_conflict"
 	}
-	if req["revision"] != s.data.Task["revision"] {
+	d := clone(s.data)
+	if d.DiscoveryScope != "" && (op == "create" || op == "sync") {
+		return nil, "runtime_managed"
+	}
+	if code := scopeTask(&d, req); code != "" {
+		return nil, code
+	}
+	revision := d.Task["revision"]
+	if op == "create" {
+		revision = d.BoardRevision
+	}
+	if req["revision"] != revision {
 		return nil, "stale_revision"
 	}
-	if req["task_id"] != nil && req["task_id"] != s.data.Task["id"] {
-		return nil, "not_found"
-	}
-	if len(s.data.Commands) >= 1000 && !emergency(req, &s.data) {
+	if len(s.data.Commands) >= 1000 && !emergency(req, &d) {
 		return nil, "demo_history_full"
 	}
-	d := clone(s.data)
 	before := d.Task["revision"]
+	if op == "create" {
+		before = nil
+	}
 	var result obj
 	effect := ""
 	runID := ""
@@ -270,35 +326,42 @@ func (s *service) request(req obj) (any, string) {
 		if code := eligible(&d); code != "" {
 			return nil, code
 		}
-		result = obj{"id": id(), "revision": d.Task["revision"], "expires": float64(time.Now().Unix() + 120), "scope": "fixture-only; no external actions"}
-		d.Approvals = map[string]obj{result["id"].(string): result}
+		result = obj{"id": id(), "task_id": d.Task["id"], "revision": d.Task["revision"], "expires": float64(time.Now().Unix() + 120), "scope": "fixture-only; no external actions"}
+		for key, a := range d.Approvals {
+			if a["task_id"] == d.Task["id"] {
+				delete(d.Approvals, key)
+			}
+		}
+		d.Approvals[result["id"].(string)] = result
 	case "start", "retry":
 		if code := eligible(&d); code != "" {
 			return nil, code
 		}
 		approvalID, _ := req["approval"].(string)
 		approval := d.Approvals[approvalID]
-		if approval == nil || approval["revision"] != d.Task["revision"] || approval["expires"].(float64) <= float64(time.Now().Unix()) {
+		if approval == nil || approval["task_id"] != d.Task["id"] || approval["revision"] != d.Task["revision"] || approval["expires"].(float64) <= float64(time.Now().Unix()) {
 			return nil, "approval_required"
 		}
 		var parent any
 		if op == "retry" {
 			r := find(&d, req["run_id"])
-			if r == nil || active(r["state"]) {
+			if r == nil || r["task_id"] != d.Task["id"] || active(r["state"]) {
 				return nil, "invalid_retry"
 			}
 			parent = r["id"]
 		}
-		if len(d.Runs) > 0 && op != "retry" {
+		attempts := taskAttempts(&d)
+		if attempts > 0 && op != "retry" {
 			return nil, "explicit_retry_required"
 		}
-		if len(d.Runs) >= 3 {
+		if attempts >= 3 {
 			return nil, "budget_exhausted"
 		}
 		runID = id()
-		result = obj{"id": runID, "task_id": "fixture-1", "attempt": float64(len(d.Runs) + 1), "parent_id": parent, "state": "starting", "created_at": time.Now().UTC().Format(time.RFC3339Nano), "simulated": true, "evidence": nil, "approval": approvalID}
+		result = obj{"id": runID, "task_id": d.Task["id"], "attempt": float64(attempts + 1), "parent_id": parent, "state": "starting", "created_at": time.Now().UTC().Format(time.RFC3339Nano), "simulated": true, "evidence": nil, "approval": approvalID}
 		d.Runs = append(d.Runs, result)
-		d.Approvals = map[string]obj{}
+		delete(d.Approvals, approvalID)
+		d.Task["stage"] = "In Progress"
 		bump(&d)
 		effect = "start"
 	case "hold", "release-hold":
@@ -307,7 +370,7 @@ func (s *service) request(req obj) (any, string) {
 		result = d.Task
 	case "stop":
 		r := find(&d, req["run_id"])
-		if r == nil || !active(r["state"]) {
+		if r == nil || r["task_id"] != d.Task["id"] || !active(r["state"]) {
 			return nil, "invalid_transition"
 		}
 		runID = r["id"].(string)
@@ -319,18 +382,23 @@ func (s *service) request(req obj) (any, string) {
 	case "sync":
 		result = obj{"simulated": true, "dispatched": false}
 	default:
-		return nil, "unsupported_command"
+		var code string
+		result, code = boardTransition(req, &d)
+		if code != "" {
+			return nil, code
+		}
 	}
 	// Serialize command results before worker updates so retries retain the original response.
 	resultBytes, _ := json.Marshal(result)
 	var frozen obj
 	_ = json.Unmarshal(resultBytes, &frozen)
-	d.Commands[key] = obj{"fingerprint": fingerprint, "result": frozen}
+	d.Commands[key] = obj{"fingerprint": fingerprint, "result": frozen, "import_identity": identity}
 	actor, _ := req["actor"].(string)
 	if actor == "" {
 		actor = "operator"
 	}
 	audit(&d, op, actor, before, frozen)
+	unScope(&d)
 	if err = s.save(d); err != nil {
 		return nil, "storage_unavailable"
 	}
@@ -348,6 +416,7 @@ func (s *service) request(req obj) (any, string) {
 	return frozen, ""
 }
 func (s *service) persistWorker(d state) {
+	unScope(&d)
 	if err := s.save(d); err != nil {
 		s.fault = err
 		return
@@ -365,6 +434,7 @@ func (s *service) started(id string) {
 	if r == nil || r["state"] != "starting" {
 		return
 	}
+	_ = scopeTask(&d, obj{"task_id": r["task_id"]})
 	r["state"] = "running"
 	audit(&d, "simulated_worker_started", "simulator", nil, obj{"id": id})
 	s.persistWorker(d)
@@ -380,12 +450,15 @@ func (s *service) worker(id string, stop bool) {
 	if r == nil || !active(r["state"]) {
 		return
 	}
+	_ = scopeTask(&d, obj{"task_id": r["task_id"]})
 	status := "succeeded"
 	if stop || r["state"] == "stopping" {
 		status = "stopped"
 	}
 	r["state"] = status
 	if status == "succeeded" {
+		d.Task["stage"] = "Human Review"
+		bump(&d)
 		r["evidence"] = obj{"simulated": true, "changed_files": []any{}, "commit_sha": nil, "environment": "fixture", "checks": []string{"simulated completion"}, "risks": []string{"No real code or deployment verified"}}
 	}
 	audit(&d, status, "simulator", nil, obj{"id": id})

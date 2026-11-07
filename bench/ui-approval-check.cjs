@@ -22,7 +22,9 @@ const path = require("node:path");
       );
       await page.locator("#token").fill(process.env.SYMPHONY_DEMO_TOKEN);
       await page.getByRole("button", { name: "Connect", exact: true }).click();
+      await page.locator("#card-fixture-1").click();
       await page
+        .locator(".detail")
         .getByRole("heading", { name: "Simulated timeout change" })
         .waitFor();
     }
@@ -51,7 +53,10 @@ const path = require("node:path");
       assert(!html.includes(secondID));
     }
     await first.screenshot({
-      path: path.join(__dirname, "../docs/go-evidence/05-replaced-preview.png"),
+      path: path.join(
+        __dirname,
+        "../docs/go-evidence/board/05-replaced-preview.png",
+      ),
       fullPage: true,
     });
     await second.getByRole("button", { name: "hold", exact: true }).click();
@@ -79,7 +84,10 @@ const path = require("node:path");
       assert(!JSON.stringify(results).includes(id));
     assert.equal(results[0].approval_valid, false);
     await second.screenshot({
-      path: path.join(__dirname, "../docs/go-evidence/06-redacted-run.png"),
+      path: path.join(
+        __dirname,
+        "../docs/go-evidence/board/06-redacted-run.png",
+      ),
       fullPage: true,
     });
     assert.deepEqual(errors, []);

@@ -1,3 +1,7 @@
+> Historical PR #2 reconciliation below is superseded for the CLI by the shared
+> PR #4 board CLI at `fb96c957`. See [current board compatibility](GO_BOARD_COMPATIBILITY.md).
+> The earlier 8+10 CLI count is historical; current suites contain 8+19 tests.
+
 # PR #2 / PR #3 coordination
 
 Reviewed PR #2 through `b1050cb`, including its approval changes from

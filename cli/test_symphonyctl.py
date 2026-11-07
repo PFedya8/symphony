@@ -111,8 +111,8 @@ class IdentifierTests(unittest.TestCase):
 
     def test_unambiguous_abbreviations_and_missing_values(self):
         cases = [
-            ["--j", "runs", "retry", "-run", "--rev", "2", "--app", "-preview", "--k", "-key"],
-            ["runs", "retry", "-run", "--rev=2", "--app=-preview", "--k=-key", "--j"],
+            ["--j", "runs", "retry", "-run", "--rev", "2", "--app", "-preview", "--ke", "-key"],
+            ["runs", "retry", "-run", "--rev=2", "--app=-preview", "--ke=-key", "--j"],
         ]
         for args in cases:
             calls, _ = self.invoke(args, lambda path, payload: payload)

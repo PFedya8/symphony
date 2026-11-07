@@ -31,3 +31,8 @@ jobs:
           python3 scripts/test_symphonyctl.py
       - name: Build
         run: go build -buildvcs=false -o "$RUNNER_TEMP/go-manual" .
+      - name: Shared CLI and board HTTP contract
+        working-directory: .
+        env:
+          SYMPHONY_GO_BINARY: ${{ runner.temp }}/go-manual
+        run: python3 bench/board-contract.py

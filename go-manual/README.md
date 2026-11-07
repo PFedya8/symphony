@@ -1,8 +1,10 @@
-# Go manual fixture service
+# Go task board
 
-This is a Go port of the **manual fixture slice**, not a port of Symphony's full
-Elixir tracker/orchestrator/Codex runtime. It never executes shell commands,
-changes repositories, contacts trackers, or deploys anything. One backend owns
+This implements the shared manual board contract and an optional read-only GitLab
+discovery mode. It is not a port of Symphony's full Elixir orchestrator/Codex
+runtime. It never executes shell commands, changes repositories or deploys anything.
+See [the board guide](../docs/GO_BOARD_GUIDE.md) and
+[compatibility matrix](../docs/GO_BOARD_COMPATIBILITY.md). One backend owns
 SQLite, commands, timers and audit history. The web UI and existing Python CLI
 both call that backend; neither owns a scheduler or task database.
 
@@ -28,7 +30,7 @@ in page memory. Do not put it in URLs or commit it. Only literal loopback listen
 addresses are accepted. Remote/public hosting is not part of this PR; use an
 explicitly configured authenticated tunnel or reverse proxy for a remote demo.
 
-1. Click **preview** to request a two-minute fixture approval.
+1. Open a task card, then click **preview** to request a two-minute fixture approval.
 2. Click **Approve and start simulation**. A timer completes after three seconds.
 3. To interrupt, click **Stop and hold**. Release the hold before another preview.
 4. Click **Approve new retry** after preview to create a new linked attempt.
@@ -65,14 +67,14 @@ writes leave the prior in-memory state intact. Async write failure makes the ser
 fail closed until restart. A second owner of the same database is rejected.
 
 Restart marks active runs `interrupted`; it never silently reruns them. Holds,
-audit events, command responses, revisions and approvals survive. Stop the service
+audit events, command responses and revisions survive. Restart clears approvals. Stop the service
 before copying its database for backup. Never share one DB between Go and Elixir:
 although the storage table is similar, idempotency fingerprints and recovery
 implementations are not an interchange/migration contract. There is no import tool.
 
 History retains the latest 1,000 events and normally accepts 1,000 commands.
 At capacity, ordinary writes are rejected, but an effective hold and an active-run
-stop remain available (at most two additional durable command records). New no-op
+stop remain available (at most 100 holds plus one stop on the 100-task board). New no-op
 holds/stops and release/retry/start are rejected. Exact-key replays still return
 the original result; no command records are evicted. Authentication, revision
 checks and successful storage remain required for safety actions. For a fresh disposable demo, use a **new database

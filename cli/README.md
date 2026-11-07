@@ -1,3 +1,8 @@
+> The CLI now follows the PR #4 board contract (`fb96c957`) and is shared by
+> both implementations. See [Go board usage](../docs/GO_BOARD_GUIDE.md) for create,
+> move, plans, comments, worklogs, links and evidence imports. Use `--key` in
+> scripts: `--k` is now ambiguous with `--kind`.
+
 # Shared Symphony CLI
 
 `symphonyctl` talks to the same HTTP backend as the web controls. Set

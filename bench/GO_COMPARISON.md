@@ -1,3 +1,7 @@
+> Historical single-task fixture measurements. The Go board/discovery extension
+> has not been benchmarked against Elixir's real runtime. Do not apply these
+> resource figures to multi-task boards, GitLab polling or actual agent work.
+
 # Go versus Elixir manual fixture benchmark
 
 ## Scope and equivalence

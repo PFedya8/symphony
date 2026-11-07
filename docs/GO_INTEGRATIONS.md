@@ -1,3 +1,8 @@
+> Updated: the Go board now has opt-in read-only GitLab discovery and shared CLI
+> evidence imports. See [current support](GO_BOARD_COMPATIBILITY.md) and
+> [configuration](GO_BOARD_GUIDE.md). The original fixture assessment below is
+> historical. Google Calendar/Tasks integrations remain absent.
+
 # Integration boundaries and extension plan
 
 Inspected at baseline `c1aa579de8bf726a31cbabbaddfe1cb4fd52e4b0` (main, including

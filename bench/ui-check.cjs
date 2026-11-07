@@ -15,11 +15,13 @@ const path = require("path");
   await page.goto(process.env.SYMPHONY_URL || "http://127.0.0.1:4001/tasks");
   await page.locator("#token").fill(process.env.SYMPHONY_DEMO_TOKEN);
   await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.locator("#card-fixture-1").click();
   await page
+    .locator(".detail")
     .getByRole("heading", { name: "Simulated timeout change" })
     .waitFor();
   await page.screenshot({
-    path: path.join(__dirname, "../docs/go-evidence/01-connected.png"),
+    path: path.join(__dirname, "../docs/go-evidence/board/01-connected.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: "preview", exact: true }).click();
@@ -30,7 +32,7 @@ const path = require("path");
   await page.getByRole("button", { name: "Stop and hold" }).click();
   await page.getByText(/stopped · attempt 1/).waitFor();
   await page.screenshot({
-    path: path.join(__dirname, "../docs/go-evidence/02-stopped.png"),
+    path: path.join(__dirname, "../docs/go-evidence/board/02-stopped.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: "release-hold", exact: true }).click();
@@ -38,12 +40,15 @@ const path = require("path");
   await page.getByRole("button", { name: "Approve new retry" }).click();
   await page.getByText(/succeeded · attempt 2/).waitFor();
   await page.screenshot({
-    path: path.join(__dirname, "../docs/go-evidence/03-retry-succeeded.png"),
+    path: path.join(
+      __dirname,
+      "../docs/go-evidence/board/03-retry-succeeded.png",
+    ),
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: path.join(__dirname, "../docs/go-evidence/04-mobile.png"),
+    path: path.join(__dirname, "../docs/go-evidence/board/04-mobile.png"),
     fullPage: true,
   });
   if (
