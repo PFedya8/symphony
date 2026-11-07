@@ -73,3 +73,14 @@ PR #2 coordination:
   Temporary PR #2 + PR #3 Elixir merge: make all passed offline with cached deps;
   313 tests, 0 failures, 6 skipped; configured coverage 100%; specs/Credo/Dialyzer passed.
   Real merge still needs the documented CLI and three documentation resolutions.
+
+Final CLI policy reconciliation with PR #2 b1050cb:
+  Supersedes the earlier 3fd60dc no-abbreviation policy and CLI merge resolution.
+  cli/symphonyctl and scripts/test_symphonyctl.py exactly match PR #2 b1050cb.
+  Both current suites: 8 + 10 tests passed on Python 3.11, 3.12 and 3.13.
+  Temporary merge: CLI merged unchanged; only three documentation conflicts.
+  Merged Go race suite passed, 90.8% coverage; vet/build passed.
+  Merged Elixir make all passed with cached dependencies (HEX_OFFLINE=1):
+  313 tests, zero failures, six skipped; configured coverage 100%;
+  formatting, specs, Credo and Dialyzer passed. No merge published.
+  Browser code unchanged in this follow-up; screenshots and benchmark not rerun.

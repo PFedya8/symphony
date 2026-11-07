@@ -25,7 +25,9 @@ python3 cli/symphonyctl runs stop --revision 2 -- --json
 python3 cli/symphonyctl runs retry -run --revision 3 --approval=--json
 ```
 
-Only full documented option names are supported (no abbreviated flags). To support
+Unambiguous long-option abbreviations remain supported, matching PR #2 and
+argparse: for example `--j`, `--rev`, `--app` and `--k`. Prefer full names in
+scripts so future option additions cannot make an abbreviation ambiguous. To support
 arbitrary opaque IDs directly, the first otherwise-unrecognized token in the ID
 position is treated as the ID, even if it looks like an option. Unknown extra
 options after an ID still fail before HTTP; the backend validates actual IDs,
@@ -41,6 +43,6 @@ python3 scripts/test_symphonyctl.py
 The first suite covers generated and arbitrary IDs, global flags, approval/key
 values, reads, mutations, logs-follow, explicit boundaries, extra-option rejection
 and a real CLI subprocess against a local HTTP test server. The second retains
-PR #2's six opaque-ID regressions unchanged. The transport stub does not claim
+PR #2's current ten opaque-ID/global-option/HTTP regressions unchanged. The transport stub does not claim
 resume support in the real service. Both suites run in Go CI and were verified
 on Python 3.11, 3.12 and 3.13.

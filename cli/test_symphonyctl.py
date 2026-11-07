@@ -109,6 +109,22 @@ class IdentifierTests(unittest.TestCase):
         self.assertEqual(calls[0].args[1]["approval"], "-preview")
         self.assertEqual(calls[0].args[1]["key"], "--opaque-key")
 
+    def test_unambiguous_abbreviations_and_missing_values(self):
+        cases = [
+            ["--j", "runs", "retry", "-run", "--rev", "2", "--app", "-preview", "--k", "-key"],
+            ["runs", "retry", "-run", "--rev=2", "--app=-preview", "--k=-key", "--j"],
+        ]
+        for args in cases:
+            calls, _ = self.invoke(args, lambda path, payload: payload)
+            self.assertEqual(calls[0].args[1]["revision"], 2)
+            self.assertEqual(calls[0].args[1]["approval"], "-preview")
+            self.assertEqual(calls[0].args[1]["key"], "-key")
+        with patch.object(sys, "argv", ["symphonyctl", "runs", "retry", "-run", "--app", "--rev", "2"]), patch.object(cli, "request") as request, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as result:
+                cli.main()
+            self.assertEqual(result.exception.code, 2)
+            request.assert_not_called()
+
     def test_existing_ids_options_and_explicit_terminator(self):
         cases = [
             (["runs", "stop", "normal-id", "--revision", "2"], "normal-id"),
