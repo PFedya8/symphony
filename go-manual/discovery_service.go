@@ -66,11 +66,14 @@ func (s *service) refreshDiscovery(ctx context.Context) {
 			if old["source_digest"] == incoming["source_digest"] {
 				continue
 			}
+			sourceStatusChanged := old["source_state"] != incoming["source_state"]
 			for _, field := range []string{"title", "description", "source_digest", "source_state", "source_labels", "source_dispatchable", "source_updated_at", "source_url", "status", "native_ref"} {
 				old[field] = incoming[field]
 			}
-			if incoming["status"] == "closed" {
-				old["stage"] = "Done"
+			// Source status transitions reset the local workflow stage. Metadata-only
+			// changes preserve operator edits, even when stage differs from source status.
+			if sourceStatusChanged {
+				old["stage"] = incoming["stage"]
 			}
 			old["revision"] = old["revision"].(float64) + 1
 		}

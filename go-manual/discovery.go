@@ -27,7 +27,9 @@ type gitLabDiscovery struct {
 
 func newGitLabDiscovery(endpoint, project, token string) (*gitLabDiscovery, error) {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.RawPath != "" || !strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/api/v4") {
+	// Reject delimiters even when their value is empty: url.Parse drops a bare
+	// fragment, and appending a resource to a query changes the request path.
+	if err != nil || strings.ContainsAny(endpoint, "?#") || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.RawPath != "" || !strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/api/v4") {
 		return nil, errors.New("invalid_gitlab_endpoint")
 	}
 	if strings.Contains(u.Path, "//") || strings.Contains(u.Path, "/../") || strings.Contains(u.Path, "/./") {

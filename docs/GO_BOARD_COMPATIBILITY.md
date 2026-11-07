@@ -57,3 +57,19 @@ adapt the safety exception to task-scoped checks and the 100-task bound. Do not
 resolve it by restoring the old single-task service or dropping the safety fix.
 No combined PR #4 Elixir runtime test has been claimed; this remains an explicit
 integration/review step. No merge commit or main-branch change was made.
+
+## Source status and local stages
+
+Source status (`source_state`/`status`) comes from GitLab; board stage is a local
+workflow label. A source transition to closed sets Done; closed to opened sets
+Todo, overriding the previous local stage. Metadata-only source changes and
+unchanged polls preserve local stage edits. Thus an operator can intentionally
+leave an opened issue in Done or a closed issue in Rework until the next source
+status transition. Local moves never reopen or close GitLab issues. Neither
+source closure nor local Done verifies a release; `release_verified` stays false.
+Each changed source snapshot increments the task revision once, so stale local
+drafts conflict; unchanged polling does not increment it.
+
+Endpoint configuration rejects any query or fragment delimiter, including bare
+`?` or `#`, before any request. This prevents resource paths from being appended
+into a query or discarded as a fragment.

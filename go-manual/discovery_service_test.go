@@ -99,3 +99,87 @@ func TestDiscoveryRejectsFixtureDatabase(t *testing.T) {
 		t.Fatal("fixture scope changed")
 	}
 }
+
+func TestDiscoverySourceTransitionsAndLocalStages(t *testing.T) {
+	var phase atomic.Int32
+	g, _ := discoveryServer(t, func(w http.ResponseWriter, r *http.Request) {
+		status := "opened"
+		if phase.Load() == 1 || phase.Load() == 2 {
+			status = "closed"
+		}
+		fmt.Fprintf(w, `[{"iid":7,"title":"Version %d","state":%q}]`, phase.Load(), status)
+	})
+	path := filepath.Join(t.TempDir(), "state.sqlite")
+	s, err := openConfigured(path, "demo", g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { s.close() }()
+	check := func(status, stage string, revision float64) {
+		t.Helper()
+		task := boardSnapshot(t, s, "7")["task"].(obj)
+		if task["status"] != status || task["source_state"] != status || task["stage"] != stage || task["revision"] != revision || task["release_verified"] != false {
+			t.Fatalf("unexpected task: %#v", task)
+		}
+	}
+	s.refreshDiscovery(context.Background())
+	check("opened", "Todo", 1)
+	boardGood(t, s, "7", "move", obj{"stage": "Human Review"})
+	check("opened", "Human Review", 2)
+	phase.Store(1)
+	s.refreshDiscovery(context.Background())
+	check("closed", "Done", 3)
+	boardGood(t, s, "7", "move", obj{"stage": "Rework"})
+	check("closed", "Rework", 4)
+	// Metadata changes and unchanged polls preserve locally authored stage choices.
+	phase.Store(2)
+	s.refreshDiscovery(context.Background())
+	check("closed", "Rework", 5)
+	s.refreshDiscovery(context.Background())
+	check("closed", "Rework", 5)
+	// A source reopening overrides the local stage and remains durable across restart.
+	phase.Store(3)
+	s.refreshDiscovery(context.Background())
+	check("opened", "Todo", 6)
+	s.close()
+	s, err = openConfigured(path, "demo", g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("opened", "Todo", 6)
+	boardGood(t, s, "7", "move", obj{"stage": "Done"})
+	check("opened", "Done", 7)
+	phase.Store(4)
+	s.refreshDiscovery(context.Background())
+	check("opened", "Done", 8)
+	// Capture the originally reported default closed -> reopened path too.
+	phase.Store(1)
+	s.refreshDiscovery(context.Background())
+	check("closed", "Done", 9)
+	phase.Store(3)
+	s.refreshDiscovery(context.Background())
+	check("opened", "Todo", 10)
+}
+
+func TestDiscoveryReopensDoneIssue(t *testing.T) {
+	var reopened atomic.Bool
+	g, _ := discoveryServer(t, func(w http.ResponseWriter, r *http.Request) {
+		status := "closed"
+		if reopened.Load() {
+			status = "opened"
+		}
+		fmt.Fprintf(w, `[{"iid":7,"title":"Issue","state":%q}]`, status)
+	})
+	s, err := openConfigured(filepath.Join(t.TempDir(), "state.sqlite"), "demo", g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	s.refreshDiscovery(context.Background())
+	reopened.Store(true)
+	s.refreshDiscovery(context.Background())
+	task := boardSnapshot(t, s, "7")["task"].(obj)
+	if task["stage"] != "Todo" || task["status"] != "opened" {
+		t.Fatalf("reopened source remained at stage=%v status=%v", task["stage"], task["status"])
+	}
+}

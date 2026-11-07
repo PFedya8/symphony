@@ -139,3 +139,13 @@ func TestGitLabDiscoveryBoundsContentAndRejectsUnsafeLinks(t *testing.T) {
 		t.Fatal("source change not detected")
 	}
 }
+
+func TestGitLabDiscoveryRejectsEmptyQueryAndFragmentDelimiters(t *testing.T) {
+	for _, suffix := range []string{"?", "#", "?#", "#?", "/?", "/#"} {
+		t.Run(suffix, func(t *testing.T) {
+			if _, err := newGitLabDiscovery("https://gitlab.example/api/v4"+suffix, "group/project", "synthetic"); err == nil {
+				t.Fatal("accepted malformed endpoint delimiter")
+			}
+		})
+	}
+}

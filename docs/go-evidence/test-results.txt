@@ -106,3 +106,12 @@ Go board extension aligned with PR #4 fb96c957:
   aa1973ec4f5c06fb42c27f6cfb1db1eeb681fb82be8ffb19a8f5893ccfd5d949.
   The earlier merged Elixir 313-test result above is historical (PR2 pair), not
   a claim that the new PR4 board has been merged/tested with this branch.
+
+GitLab review fixes after befced82:
+  Reproduced reopened source remaining Done and acceptance of bare query/fragment
+  delimiters before fix. Added close/reopen, local stage, metadata-only refresh,
+  unchanged poll, revision and restart regressions plus six delimiter subcases.
+  Source status transitions now set Done/Todo; metadata-only changes preserve
+  local stages. Bare/nonempty query and fragment delimiters reject at construction.
+  Full Go race suite passed: 90.2% coverage; vet/build passed.
+  UI/CLI unchanged; screenshots and benchmark not rerun. No live provider used.

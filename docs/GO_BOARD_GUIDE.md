@@ -68,8 +68,12 @@ where available). The adapter only issues GET for the configured issue list,
 never follows redirects and never mutates GitLab. It polls immediately, then
 once every 30 seconds. There may initially be no cards. Failures appear as
 `runtime_error`; the last good data remains. Source changes increment revisions
-without replacing local documents/comments. Closed issues become Done, still
-with `release_verified=false`. Missing issues in a bounded response are retained.
+without replacing local documents/comments. A source transition to closed sets Done; reopening sets Todo. These transitions
+override local stages. Other source changes preserve local stage edits, which can
+therefore intentionally differ from GitLab status. Local moves never write back
+to GitLab, and `release_verified` remains false. Missing issues in a bounded
+response are retained. Endpoint URLs must not contain query/fragment delimiters,
+including a trailing `?` or `#`.
 
 Imported issue execution is **unavailable** in Go. Manual stage/plan/comment/link
 changes stay local. Changing endpoint/project/credential requires a fresh DB.

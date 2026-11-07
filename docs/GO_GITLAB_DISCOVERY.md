@@ -44,3 +44,25 @@ board API, leaving all approvals, reservations and worker ownership there, or
 port the full orchestration and fencing contract with equivalent tests. Neither
 path is implemented here. Do not share the two implementations' SQLite files or
 claim runtime resource parity from the fixture benchmark.
+
+## Source status and local stages
+
+Source status (`source_state`/`status`) comes from GitLab; board stage is a local
+workflow label. A source transition to closed sets Done; closed to opened sets
+Todo, overriding the previous local stage. Metadata-only source changes and
+unchanged polls preserve local stage edits. Thus an operator can intentionally
+leave an opened issue in Done or a closed issue in Rework until the next source
+status transition. Local moves never reopen or close GitLab issues. Neither
+source closure nor local Done verifies a release; `release_verified` stays false.
+Each changed source snapshot increments the task revision once, so stale local
+drafts conflict; unchanged polling does not increment it.
+
+Endpoint configuration rejects any query or fragment delimiter, including bare
+`?` or `#`, before any request. This prevents resource paths from being appended
+into a query or discarded as a fragment.
+
+For a database affected before this fix, an already persisted opened/Done task is
+indistinguishable from an intentional local Done label. Move that card to Todo
+manually if it should be reopened on the board; the update does not overwrite
+all opened/Done tasks. Subsequent source close/reopen transitions reconcile as
+specified above.
