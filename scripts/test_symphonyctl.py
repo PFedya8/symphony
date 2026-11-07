@@ -11,9 +11,72 @@ from pathlib import Path
 import runpy
 import sys
 import unittest
+import tempfile
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 CLI = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'cli/symphonyctl'))
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_agent_import_selects_only_reviewed_fields(self):
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json') as artifact:
+            json.dump({'reference': 'commit abc', 'summary': 'Reviewed result', 'secret': 'must not forward'}, artifact)
+            artifact.flush()
+            result = CLI['import_evidence'](SimpleNamespace(action='import-agent', file=artifact.name))
+        self.assertEqual(result['provider'], 'agent_artifact')
+        self.assertNotIn('secret', json.dumps(result))
+        with self.assertRaises(ValueError):
+            CLI['import_evidence'](SimpleNamespace(action='import-agent', file=None))
+
+    def test_agent_import_rejects_oversize_and_invalid_shape(self):
+        for text in ['x' * 65537, '[]', '{"reference": 3, "summary":"bad"}']:
+            with tempfile.NamedTemporaryFile(mode='w+', suffix='.json') as artifact:
+                artifact.write(text); artifact.flush()
+                with self.assertRaises(ValueError):
+                    CLI['import_evidence'](SimpleNamespace(action='import-agent', file=artifact.name))
+
+    def test_github_import_fetches_only_canonical_api_and_selects_fields(self):
+        response = Mock()
+        response.read.return_value = json.dumps({'number': 4, 'title': 'A PR', 'state': 'open', 'merged': False,
+                                                'head': {'sha': 'abc'}, 'body': 'private body excluded'}).encode()
+        response.__enter__ = Mock(return_value=response); response.__exit__ = Mock(return_value=False)
+        opener = Mock(); opener.open.return_value = response
+        with patch('urllib.request.build_opener', return_value=opener), patch.dict(os.environ, {'SYMPHONY_GITHUB_TOKEN': 'separate-provider-token'}):
+            result = CLI['import_evidence'](SimpleNamespace(action='import-pr', url='https://github.com/owner/repo/pull/4'))
+        req = opener.open.call_args.args[0]
+        self.assertEqual(req.full_url, 'https://api.github.com/repos/owner/repo/pulls/4')
+        self.assertEqual(result['provider'], 'github_api')
+        self.assertNotIn('private body', result['text'])
+        self.assertNotIn('separate-provider-token', json.dumps(result))
+
+    def test_import_rejects_unsafe_sources(self):
+        for url in ['https://evil.test/owner/repo/pull/1', 'http://github.com/owner/repo/pull/1', 'https://github.com/../repo/pull/1']:
+            with self.assertRaises(ValueError):
+                CLI['import_evidence'](SimpleNamespace(action='import-pr', url=url))
+        for url in ['http://example.com:4000', 'http://user:pass@127.0.0.1:4000', 'http://127.0.0.1:4000/private', 'http://127.0.0.1']:
+            with self.assertRaises(ValueError):
+                CLI['import_evidence'](SimpleNamespace(action='import-runtime', source_url=url, issue='TASK-1'))
+        with self.assertRaises(ValueError):
+            CLI['NoRedirect']().redirect_request(None, None, 302, '', {}, 'https://evil.test')
+
+    def test_runtime_import_reads_real_local_http_without_copying_logs_or_paths(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200); self.end_headers()
+                self.wfile.write(json.dumps({'issue_identifier':'TASK-1', 'status':'running', 'workspace':{'path':'private'},
+                                             'running':{'state':'In Progress','turn_count':2,'last_message':'secret prompt','last_event':'turn_started'}}).encode())
+            def log_message(self, *_):
+                pass
+        server = HTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            result = CLI['import_evidence'](SimpleNamespace(action='import-runtime', source_url=f'http://127.0.0.1:{server.server_port}', issue='TASK-1'))
+            self.assertEqual(result['provider'], 'runtime_snapshot')
+            self.assertNotIn('private', result['text']); self.assertNotIn('secret', result['text'])
+            self.assertEqual(json.loads(result['text'])['running']['turn_count'], 2)
+        finally:
+            server.shutdown(); thread.join(); server.server_close()
 
 
 class IdentifierTests(unittest.TestCase):
@@ -81,6 +144,10 @@ class IdentifierTests(unittest.TestCase):
 
     def test_board_mutations_forward_fields_and_types(self):
         cases = [
+            (['tasks', 'worklog', 'task-1', '--plan-text', 'Plan', '--acceptance-text', 'Accept', '--validation-text', 'Tested', '--revision', '2'],
+             {'op': 'worklog', 'plan_text': 'Plan', 'acceptance_text': 'Accept', 'validation_text': 'Tested'}),
+            (['tasks', 'comment', 'task-1', '--text', 'Reply', '--parent-id', '-parent', '--revision', '2'],
+             {'op': 'comment', 'text': 'Reply', 'parent_id': '-parent'}),
             (['tasks', 'create', '--title', 'New work', '--project', 'other', '--revision', '1'],
              {'op': 'create', 'title': 'New work', 'project': 'other', 'task_id': None}),
             (['tasks', 'move', 'task-1', '--stage', 'Human Review', '--revision', '2'],

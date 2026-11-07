@@ -136,11 +136,11 @@ Stop with Ctrl-C; restart with the same database and token to retain state.
 Unknown active work is marked interrupted after restart, never automatically
 replayed. The existing orchestrator owns workers; no second scheduler was added.
 
-**Database format is now version 2.** On opening a version-1 single-task database,
+**Database format is now version 3.** On opening a version-1 single-task database,
 the launcher preserves its task/runs/history and adds board fields. It does not
 inject six new sample tasks into an existing database. Old approvals are cleared.
 Before upgrading, stop the old process and copy its database and any journal as a
-private backup. Old binaries reject version 2; rollback requires the old backup.
+private backup. Old binaries reject version 3; rollback requires the old backup.
 Do not restore or copy over a live database. Unknown versions fail closed.
 
 Limits: 100 tasks, 20 checklist steps (160 bytes each), 10 links per task, three
@@ -233,3 +233,112 @@ Run `node scripts/check_board_conflicts.cjs` against a separate fresh disposable
 local database using the same token/browser environment variables as the capture
 script. It exercises two actual browsers, stale plan rejection and recovery,
 visible mobile plan/link/run failures, and the literal `all` project filter.
+
+## Authored updates, discussion and walkthroughs
+
+Open a task, then **Publish authored update**. Supply Plan, Acceptance Criteria
+and Validation as plain text, one item per line. Two leading spaces create a
+child; four create a grandchild. Do not skip levels. Each section allows 50 items,
+500 bytes per item and 4,000 bytes total. Publishing preserves an immutable
+version in Activity and shows the latest version in the task detail. This is
+operator-authored content; it is not presented as an agent-generated plan.
+The flat execution checklist remains separate.
+
+Use **Post comment** for a new discussion entry. Select an existing comment in
+**Reply to** to create a reply; threads support three levels. Comments are
+plain text, not executable HTML/Markdown, and remain in durable activity.
+There is one authenticated shared operator identity, not individual accounts.
+Per task: 20 authored updates, 100 comments, 20 imported reports. There is no
+comment edit/delete operation. Forms preserve drafts and reject stale revisions.
+
+The same mutations work through `POST /api/v1/control/commands` and the CLI:
+
+```sh
+# Obtain a fresh revision before each mutation.
+cli/symphonyctl tasks show fixture-1 --json
+cli/symphonyctl tasks worklog fixture-1 --revision 1 \
+  --plan-text 'Inspect behavior
+  Check cancellation' \
+  --acceptance-text 'No stale overwrite' --validation-text 'Two clients checked'
+cli/symphonyctl tasks comment fixture-1 --revision 2 --text 'Please review'
+# Use the returned comment id as --parent-id when replying.
+```
+
+Add a `walkthrough` HTTPS link. Supported Vimeo and YouTube URLs offer a **Load
+walkthrough** button. No provider request happens before that click. The player
+uses a canonical allowlisted origin, a sandbox, no referrer, and no autoplay or
+clipboard permissions. Other providers remain ordinary external links. Playback
+may be blocked by the provider's privacy settings, network rules or browser;
+the integration never claims a linked recording is verified evidence.
+
+## Explicit integration imports
+
+These are real one-shot imports through the CLI and shared service. They do not
+start an agent, create a PR, merge anything, change the stage or set
+`release_verified`. Imported reports are labeled **operator imported; not
+independently verified by service**, because the control API can also submit a
+report. The server records the authenticated operator and receipt time.
+
+**GitHub PR evidence:** `import-pr` performs a real GET against the canonical
+GitHub REST API. Redirects are refused. It retains only title, state, merged/draft,
+head/base SHA and update time; it excludes PR body and credentials.
+
+```sh
+cli/symphonyctl tasks import-pr fixture-1 --revision CURRENT_REVISION \
+  --url https://github.com/PFedya8/symphony/pull/4
+```
+
+Public repositories work without a provider token. For a private repository,
+the operator must supply an already-authorized `SYMPHONY_GITHUB_TOKEN` with read
+access to that repository's pull requests. This is separate from the board token;
+it is sent only to `api.github.com`, never persisted or forwarded to the board.
+GitHub Enterprise and GitLab MR imports are not implemented by this command.
+A new import is required to refresh status; there is no polling/webhook scheduler.
+
+**Existing Symphony runtime:** the standard orchestrator already exposes
+`GET /api/v1/:issue_identifier`. `import-runtime` reads that endpoint from an
+explicit loopback-only source. It copies only issue identifier, status, state,
+turn count and last event/type/time. Prompts, messages, workspace paths, logs,
+provider credentials and session identifiers are excluded.
+
+```sh
+cli/symphonyctl tasks import-runtime fixture-1 --revision CURRENT_REVISION \
+  --source-url http://127.0.0.1:4002 --issue PROJECT-123
+```
+
+The standard runtime must already be running with a configured workflow and
+tracker. An inactive/completed issue absent from its transient observability API
+returns an error; this is not a historical agent-output store. The fixture and
+standard runtime are separate modes and cannot share one orchestrator process.
+This import is read-only at the source, adds no scheduler, dispatches no work,
+and does not establish a project mapping automatically.
+
+**Reviewed agent output:** export a selected result from the actual agent's
+workspace into a JSON file with `reference` and `summary` strings. Review it for
+secrets before import. The reference should identify the run/commit/artifact;
+the board does not authenticate that claim. Only those two fields are copied.
+
+```sh
+# reviewed-agent.json: {"reference":"run/commit/artifact identity", "summary":"Reviewed selected output"}
+cli/symphonyctl tasks import-agent fixture-1 --revision CURRENT_REVISION \
+  --file reviewed-agent.json
+```
+
+Input files are capped at 64 KiB; reference at 500 bytes and summary at 8,000 bytes.
+Keep the board token with the operator/importer rather than giving an agent broad
+board control. Importing an artifact is not a substitute for independently
+reviewing its tests or merge status.
+
+## Version 3 migration and validation
+
+This increment writes snapshot schema **3**. Versions 1 and 2 gain empty authored
+updates/comments/reports while preserving their tasks. Stop the instance and
+back up SQLite before upgrading. Older binaries refuse schema 3; rollback needs
+the pre-upgrade database backup. Separate project instances still require their
+own token, database, workspace and authorized provider credentials.
+
+Run `node scripts/check_board_content.cjs` against a fresh disposable local
+fixture with the same environment variables as the earlier browser scripts.
+It verifies nested sections, comments/replies, CLI/UI consistency, agent-artifact
+import and opt-in embed boundaries. It blocks video traffic deliberately and
+therefore does **not** verify provider playback.

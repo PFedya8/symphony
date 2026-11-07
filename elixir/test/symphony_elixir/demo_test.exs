@@ -517,4 +517,114 @@ defmodule SymphonyElixir.DemoTest do
     detail |> element("button[phx-click=expand-detail]") |> render_click()
     refute has_element?(detail, ".task-detail.full-page")
   end
+
+  test "nested authored activity, threaded comments and imported evidence persist without asserting live status" do
+    sections = %{"plan_text" => "Inspect\n  Verify\n    Edge case", "acceptance_text" => "No stale overwrite", "validation_text" => "Two clients tested"}
+    assert {:ok, doc} = command("worklog", sections)
+    assert hd(hd(hd(doc["sections"])["nodes"])["children"])["text"] == "Verify"
+    assert {:ok, root} = command("comment", %{"text" => "Review this"})
+    assert {:ok, reply} = command("comment", %{"text" => "Checked", "parent_id" => root["id"]})
+    assert {:ok, leaf} = command("comment", %{"text" => "Confirmed", "parent_id" => reply["id"]})
+    assert {:error, "invalid_parent"} = command("comment", %{"text" => "Too deep", "parent_id" => leaf["id"]})
+    assert {:error, "invalid_parent"} = board_command("fixture-2", "comment", %{"text" => "Cross task", "parent_id" => root["id"]})
+    assert {:ok, report} = command("evidence", %{"provider" => "agent_artifact", "reference" => "reviewed artifact commit abc", "text" => "No secrets; selected agent summary"})
+    assert report["verification"] =~ "not independently verified"
+    before = snapshot()
+    refute before["task"]["release_verified"]
+    assert before["task"]["stage"] == "Todo"
+    assert Enum.find(before["events"], &(&1["op"] == "worklog"))["result"] == doc
+    :ok = stop_supervised(SymphonyElixir.AgentRuntimeSupervisor)
+    start_runtime()
+    assert snapshot() == before
+  end
+
+  test "rich content rejects malformed and excessive submissions" do
+    valid = %{"plan_text" => "Plan", "acceptance_text" => "Accept", "validation_text" => "Validate"}
+
+    invalid = [nil, "", "  Orphan", "Root\n    Skipped level", "Root\n Bad indent", "\t"]
+    invalid = invalid ++ [String.duplicate("x", 501), String.duplicate("x\n", 51), String.duplicate("x", 4001)]
+
+    for text <- invalid do
+      assert {:error, "invalid_sections"} = command("worklog", Map.put(valid, "plan_text", text))
+    end
+
+    for _ <- 1..20, do: assert({:ok, _} = command("worklog", valid))
+    assert {:error, "document_limit"} = command("worklog", valid)
+    for _ <- 1..100, do: assert({:ok, _} = command("comment", %{"text" => "bounded", "parent_id" => ""}))
+    assert {:error, "comment_limit"} = command("comment", %{"text" => "overflow"})
+    assert {:error, "invalid_provider"} = command("evidence", %{"provider" => "verified"})
+
+    for _ <- 1..20,
+        do: assert({:ok, _} = command("evidence", %{"provider" => "github_api", "reference" => "https://api.github.com/repos/example/demo/pulls/1", "text" => "Operator-imported response"}))
+
+    assert {:error, "report_limit"} = command("evidence", %{"provider" => "github_api"})
+  end
+
+  test "walkthroughs canonicalize only allowlisted provider URLs" do
+    alias SymphonyElixir.Demo.Content
+    assert Content.embed("https://vimeo.com/123") == "https://player.vimeo.com/video/123"
+    assert Content.embed("https://player.vimeo.com/video/123?h=abc123&autoplay=1") == "https://player.vimeo.com/video/123?h=abc123"
+    assert Content.embed("https://youtu.be/abcdefghijk") == "https://www.youtube-nocookie.com/embed/abcdefghijk"
+    assert Content.embed("https://www.youtube.com/watch?v=abcdefghijk") == "https://www.youtube-nocookie.com/embed/abcdefghijk"
+
+    for url <- [
+          "http://vimeo.com/123",
+          "https://vimeo.com:444/123",
+          "https://user@vimeo.com/123",
+          "https://evil.example/123",
+          "https://vimeo.com/invalid",
+          "https://vimeo.com/123?h=bad%3C",
+          "https://youtube.com/other",
+          "https://youtube.com/watch?v=bad",
+          "https://vimeo.com"
+        ] do
+      refute Content.embed(url)
+    end
+  end
+
+  test "rich forms, authored activity and opt-in embeds share state with the HTTP CLI" do
+    conn = board_connection()
+    {:ok, view, _} = live(conn, "/tasks?task=fixture-1")
+    view |> form("#add-worklog", %{plan_text: "Inspect\n  Nested check", acceptance_text: "Safe output", validation_text: "Real test"}) |> render_submit()
+    assert has_element?(view, ".authored-document ul ul", "Nested check")
+    assert has_element?(view, ".activity-event", "worklog · demo-operator")
+    view |> form("#add-comment", %{text: "<script>not executed</script>"}) |> render_submit()
+    root = hd(snapshot()["task"]["comments"])
+    view |> form("#add-comment", %{text: "Reply", parent_id: root["id"]}) |> render_submit()
+    assert has_element?(view, ".thread-comment .thread-comment", "Reply")
+    refute has_element?(view, ".thread-comment script")
+    view |> form("#add-link", %{kind: "walkthrough", title: "Video", url: "https://vimeo.com/123"}) |> render_submit()
+    refute has_element?(view, "iframe")
+    view |> element("button[phx-click=load-walkthrough]") |> render_click()
+    assert has_element?(view, "iframe[src='https://player.vimeo.com/video/123'][sandbox][referrerpolicy=no-referrer]")
+    render_click(view, "load-walkthrough", %{"url" => "https://evil.example"})
+    refute has_element?(view, "iframe")
+    cli = Path.expand("../cli/symphonyctl")
+    env = [{"SYMPHONY_URL", "http://127.0.0.1:#{SymphonyElixir.HttpServer.bound_port()}"}, {"SYMPHONY_DEMO_TOKEN", Application.get_env(:symphony_elixir, :demo_token)}]
+    {output, 0} = System.cmd(cli, ["tasks", "show", "fixture-1", "--json"], env: env)
+    task = Jason.decode!(output)
+    assert task["documents"] == snapshot()["task"]["documents"]
+    assert length(task["comments"]) == 2
+    {_, 0} = System.cmd(cli, ["tasks", "comment", "fixture-1", "--text", "CLI reply", "--parent-id", root["id"], "--revision", to_string(task["revision"])], env: env)
+    eventually(fn -> has_element?(view, ".thread-comment .thread-comment", "CLI reply") end)
+    assert {:ok, _} = command("evidence", %{"provider" => "agent_artifact", "reference" => "selected report", "text" => "Reviewed output", "url" => "https://example.com/source"})
+    eventually(fn -> has_element?(view, ".imported-report a[href='https://example.com/source']", "Open source") end)
+  end
+
+  test "version two snapshots gain empty authored fields without losing existing tasks" do
+    :ok = stop_supervised(SymphonyElixir.AgentRuntimeSupervisor)
+    {db, stored} = Store.open(Application.get_env(:symphony_elixir, :demo_db))
+    old = Map.update!(stored, "tasks", &Map.new(&1, fn {id, task} -> {id, Map.drop(task, ["documents", "comments", "reports"])} end))
+    :ok = Store.save(db, old)
+    :ok = Exqlite.Sqlite3.execute(db, "UPDATE demo_state SET version=2")
+    :ok = Exqlite.Sqlite3.close(db)
+    start_runtime()
+    assert length(snapshot()["tasks"]) == 6
+
+    for task <- snapshot()["tasks"] do
+      assert task["documents"] == []
+      assert task["comments"] == []
+      assert task["reports"] == []
+    end
+  end
 end

@@ -56,3 +56,10 @@ filtering, task details, editable checklists, activity and user-supplied evidenc
 links. Browser, CLI and API use the same durable service. Execution remains an
 explicitly labeled simulator; real tracker/agent and PR synchronization are not
 connected to this board. See the [board guide](docs/MANUAL_DEMO_GUIDE.md).
+
+The board also supports immutable nested Plan/Acceptance Criteria/Validation
+updates, threaded comments, opt-in Vimeo/YouTube walkthroughs and explicit CLI
+imports of reviewed agent artifacts, existing local runtime observations and
+GitHub PR API evidence. Imports retain provenance and do not claim a verified
+merge or change execution state. See the manual demo guide for schema-3 backup,
+provider boundaries, CLI commands and the remaining video-parity gaps.

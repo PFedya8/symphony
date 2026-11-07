@@ -15,7 +15,7 @@ defmodule SymphonyElixir.Demo.Store do
     data =
       case row do
         :done -> nil
-        {:row, [version, json]} when version in [1, 2] -> Jason.decode!(json)
+        {:row, [version, json]} when version in [1, 2, 3] -> Jason.decode!(json)
         _ -> raise "Unsupported demo database schema; restore a compatible backup"
       end
 
@@ -25,7 +25,7 @@ defmodule SymphonyElixir.Demo.Store do
   @spec save(reference(), map()) :: :ok
   def save(db, data) do
     :ok = SQL.execute(db, "BEGIN IMMEDIATE")
-    {:ok, stmt} = SQL.prepare(db, "INSERT OR REPLACE INTO demo_state VALUES (1, 2, ?)")
+    {:ok, stmt} = SQL.prepare(db, "INSERT OR REPLACE INTO demo_state VALUES (1, 3, ?)")
     :ok = SQL.bind(stmt, [Jason.encode!(data)])
     :done = SQL.step(db, stmt)
     :ok = SQL.release(db, stmt)

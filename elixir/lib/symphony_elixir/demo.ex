@@ -1,5 +1,6 @@
 defmodule SymphonyElixir.Demo do
   @moduledoc "Manual fixture lifecycle, executed only inside the existing orchestrator. No shell or network tools."
+  alias SymphonyElixir.Demo.Content
   alias SymphonyElixir.Demo.Store
   @active ~w(starting running stopping)
   @stages ["Backlog", "Todo", "In Progress", "Human Review", "Merging", "Done", "Rework", "Canceled", "Duplicate"]
@@ -176,13 +177,65 @@ defmodule SymphonyElixir.Demo do
 
   defp transition(%{"op" => "link"} = req, data) do
     require!(req["kind"] in ["pull_request", "walkthrough"], "invalid_link_kind")
-    url = text!(req["url"], 2000)
-    uri = URI.parse(url)
-    require!(uri.scheme == "https" and is_binary(uri.host) and uri.host != "" and uri.userinfo == nil, "invalid_url")
+    url = https_url!(req["url"])
     require!(length(data["task"]["links"]) < 10, "link_limit")
     link = %{"kind" => req["kind"], "url" => url, "title" => text!(req["title"], 160), "verification" => "user supplied; not verified"}
     data = data |> update_in(["task", "links"], &(&1 ++ [link])) |> bump()
     {link, data, nil}
+  end
+
+  defp transition(%{"op" => "worklog"} = req, data) do
+    require!(length(data["task"]["documents"]) < 20, "document_limit")
+
+    document = %{
+      "id" => id(),
+      "author" => req["actor"] || "operator",
+      "at" => DateTime.to_iso8601(DateTime.utc_now()),
+      "sections" => Content.sections(req),
+      "provenance" => "operator authored"
+    }
+
+    data = data |> update_in(["task", "documents"], &(&1 ++ [document])) |> bump()
+    {document, data, nil}
+  end
+
+  defp transition(%{"op" => "comment"} = req, data) do
+    comments = data["task"]["comments"]
+    require!(length(comments) < 100, "comment_limit")
+    parent_id = if req["parent_id"] in [nil, ""], do: nil, else: req["parent_id"]
+    parent = Enum.find(comments, &(&1["id"] == parent_id))
+    require!(is_nil(parent_id) or (not is_nil(parent) and parent["depth"] < 2), "invalid_parent")
+
+    comment = %{
+      "id" => id(),
+      "author" => req["actor"] || "operator",
+      "at" => DateTime.to_iso8601(DateTime.utc_now()),
+      "text" => text!(req["text"], 4000),
+      "parent_id" => parent_id,
+      "depth" => if(parent, do: parent["depth"] + 1, else: 0)
+    }
+
+    data = data |> update_in(["task", "comments"], &(&1 ++ [comment])) |> bump()
+    {comment, data, nil}
+  end
+
+  defp transition(%{"op" => "evidence"} = req, data) do
+    require!(length(data["task"]["reports"]) < 20, "report_limit")
+    require!(req["provider"] in ["github_api", "agent_artifact", "runtime_snapshot"], "invalid_provider")
+
+    report = %{
+      "id" => id(),
+      "author" => req["actor"] || "operator",
+      "at" => DateTime.to_iso8601(DateTime.utc_now()),
+      "url" => if(req["url"], do: https_url!(req["url"]), else: nil),
+      "provider" => req["provider"],
+      "reference" => text!(req["reference"], 500),
+      "text" => text!(req["text"], 8000),
+      "verification" => "operator imported; not independently verified by service"
+    }
+
+    data = data |> update_in(["task", "reports"], &(&1 ++ [report])) |> bump()
+    {report, data, nil}
   end
 
   defp transition(%{"op" => "sync"}, data), do: {%{"simulated" => true, "dispatched" => false}, data, nil}
@@ -313,6 +366,9 @@ defmodule SymphonyElixir.Demo do
       "release_verified" => false,
       "description" => "Synthetic example for the #{project} project. Board stage is manually managed; no real agent, PR or deployment is implied.",
       "plan" => Enum.map(["Inspect the task and constraints", "Prepare the change and checks", "Review evidence before any release"], &%{"text" => &1, "completed" => false}),
+      "documents" => [],
+      "comments" => [],
+      "reports" => [],
       "links" => []
     }
   end
@@ -322,7 +378,12 @@ defmodule SymphonyElixir.Demo do
     data |> Map.delete("task") |> Map.put("tasks", %{task["id"] => task}) |> Map.put("board_revision", 1) |> Map.put("approvals", %{})
   end
 
-  defp migrate(data), do: data
+  defp migrate(data) do
+    Map.update!(data, "tasks", fn tasks ->
+      Map.new(tasks, fn {id, task} -> {id, Map.merge(%{"documents" => [], "comments" => [], "reports" => []}, task)} end)
+    end)
+  end
+
   defp task!(data, id), do: Map.get(data["tasks"], id) || throw({:reject, "not_found"})
 
   defp request_task_id(req, data) do
@@ -346,6 +407,13 @@ defmodule SymphonyElixir.Demo do
     current_revision = approval["revision"] == task["revision"]
     unexpired = approval["expires"] > System.system_time(:second)
     same_task and current_revision and unexpired
+  end
+
+  defp https_url!(value) do
+    url = text!(value, 2000)
+    uri = URI.parse(url)
+    require!(uri.scheme == "https" and is_binary(uri.host) and uri.host != "" and uri.userinfo == nil, "invalid_url")
+    url
   end
 
   defp text!(value, limit) do

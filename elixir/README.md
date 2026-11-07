@@ -429,4 +429,11 @@ state. `tasks create`, `move`, `plan`, `check` and `link` use the shared command
 handler with revision/idempotency checks. Tasks have separate attempt budgets;
 worker capacity remains one globally. The board is simulated and project filters
 are not tenant authorization. See the [guide](../docs/MANUAL_DEMO_GUIDE.md),
-including the version-1 to version-2 database migration and rollback instructions.
+including the version-1/version-2 to version-3 database migration and rollback instructions.
+
+The board also supports immutable nested Plan/Acceptance Criteria/Validation
+updates, threaded comments, opt-in Vimeo/YouTube walkthroughs and explicit CLI
+imports of reviewed agent artifacts, existing local runtime observations and
+GitHub PR API evidence. Imports retain provenance and do not claim a verified
+merge or change execution state. See the manual demo guide for schema-3 backup,
+provider boundaries, CLI commands and the remaining video-parity gaps.

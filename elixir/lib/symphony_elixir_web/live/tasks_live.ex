@@ -2,6 +2,7 @@ defmodule SymphonyElixirWeb.TasksLive do
   @moduledoc "Multi-task fixture board backed by the same service as the CLI."
   use Phoenix.LiveView, layout: {SymphonyElixirWeb.Layouts, :app}
   alias Phoenix.LiveView.JS
+  alias SymphonyElixir.Demo.Content
   alias SymphonyElixir.Service
 
   @impl true
@@ -10,7 +11,8 @@ defmodule SymphonyElixirWeb.TasksLive do
 
     if byte_size(token) >= 32 and session["demo_auth"] == SymphonyElixirWeb.DemoAuth.digest(token) do
       if connected?(socket), do: Phoenix.PubSub.subscribe(SymphonyElixir.PubSub, "demo")
-      socket = assign(socket, error: nil, approval: nil, task_id: "fixture-1", detail: false, project: nil, expanded: false)
+      socket = assign(socket, error: nil, approval: nil, task_id: "fixture-1", detail: false, project: nil)
+      socket = assign(socket, expanded: false, embed_url: nil)
       {:ok, refresh(socket)}
     else
       {:ok, redirect(socket, to: "/")}
@@ -28,6 +30,7 @@ defmodule SymphonyElixirWeb.TasksLive do
         detail: valid,
         project: normalize_project(params["project"]),
         approval: nil,
+        embed_url: nil,
         error: if(selected && not valid, do: "Task not found", else: nil)
       )
 
@@ -39,6 +42,12 @@ defmodule SymphonyElixirWeb.TasksLive do
 
   @impl true
   def handle_event("filter", %{"project" => project}, socket), do: {:noreply, push_patch(socket, to: board_path(normalize_project(project)))}
+
+  def handle_event("load-walkthrough", %{"url" => url}, socket) do
+    link = Enum.find(socket.assigns.payload["task"]["links"], &(&1["url"] == url and &1["kind"] == "walkthrough"))
+    embed_url = if link, do: Content.embed(link["url"]), else: nil
+    {:noreply, assign(socket, embed_url: embed_url)}
+  end
 
   def handle_event("expand-detail", _, socket), do: {:noreply, assign(socket, expanded: not socket.assigns.expanded)}
 
@@ -139,6 +148,8 @@ defmodule SymphonyElixirWeb.TasksLive do
       "create" => Map.merge(base, %{"revision" => payload["board_revision"], "title" => "", "description" => ""}),
       "move" => Map.put(base, "stage", task["stage"]),
       "plan" => Map.put(base, "text", Enum.map_join(task["plan"], "\n", & &1["text"])),
+      "worklog" => Map.merge(base, %{"plan_text" => "", "acceptance_text" => "", "validation_text" => ""}),
+      "comment" => Map.merge(base, %{"text" => "", "parent_id" => ""}),
       "link" => Map.merge(base, %{"kind" => "pull_request", "title" => "", "url" => ""})
     }
   end
@@ -165,6 +176,21 @@ defmodule SymphonyElixirWeb.TasksLive do
   defp task_events(payload), do: Enum.filter(payload["events"], &((&1["task_id"] || "fixture-1") == payload["task"]["id"]))
   defp projects(payload), do: payload["tasks"] |> Enum.map(& &1["project"]) |> Enum.uniq() |> Enum.sort()
   defp column_tasks(payload, project, stage), do: Enum.filter(payload["tasks"], &(&1["stage"] == stage and (is_nil(project) or &1["project"] == project)))
+
+  defp section_nodes(assigns) do
+    ~H"""
+    <ul class="authored-nodes"><li :for={node <- @nodes}>{node["text"]}<.section_nodes :if={node["children"] != []} nodes={node["children"]} /></li></ul>
+    """
+  end
+
+  defp comment_thread(assigns) do
+    ~H"""
+    <article :for={comment <- Enum.filter(@comments, &(&1["parent_id"] == @parent))} class="thread-comment" id={"comment-" <> comment["id"]}>
+      <header><strong>{comment["author"]}</strong><time>{comment["at"]}</time></header><p>{comment["text"]}</p>
+      <small>Comment {comment["id"]}</small><.comment_thread comments={@comments} parent={comment["id"]} />
+    </article>
+    """
+  end
 
   @impl true
   def render(assigns) do
@@ -223,16 +249,45 @@ defmodule SymphonyElixirWeb.TasksLive do
           </article>
           <p :if={task_runs(@payload) == []} class="muted">No runs. Preview the scope before approving a simulation.</p>
         </section>
+        <section class="detail-section"><h3>Authored plan & validation</h3><p class="muted">Operator authored; plain text. Indent by two spaces for nested steps, up to three levels.</p>
+          <div :if={@payload["task"]["documents"] != []} class="authored-document">
+            <div :for={section <- List.last(@payload["task"]["documents"])["sections"]}><h4>{section["title"]}</h4><.section_nodes nodes={section["nodes"]} /></div>
+          </div>
+          <details id="worklog-panel" phx-mounted={JS.ignore_attributes("open")}><summary>Publish authored update</summary>
+            <form id="add-worklog" phx-submit="worklog" phx-change="draft">
+              <input type="hidden" name="_form" value="worklog" /><input type="hidden" name="revision" value={@drafts["worklog"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} />
+              <label :for={{field, title} <- [{"plan_text", "Plan"}, {"acceptance_text", "Acceptance Criteria"}, {"validation_text", "Validation"}]}>{title}<textarea name={field} required maxlength="4000" phx-focus="begin-draft" phx-value-form="worklog" phx-value-revision={@drafts["worklog"]["revision"]} phx-value-task_id={@task_id}>{@drafts["worklog"][field]}</textarea></label>
+              <button>Publish update</button><button :if={@drafts["worklog"]["active"]} type="button" phx-click="reload-draft" phx-value-form="worklog">Reload current data (discard draft)</button>
+            </form>
+          </details>
+        </section>
+        <section class="detail-section"><h3>Discussion</h3><p class="muted">Shared operator identity; replies are preserved with their parent.</p>
+          <.comment_thread comments={@payload["task"]["comments"]} parent={nil} />
+          <form id="add-comment" phx-submit="comment" phx-change="draft">
+            <input type="hidden" name="_form" value="comment" /><input type="hidden" name="revision" value={@drafts["comment"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} />
+            <label>Reply to<select name="parent_id" phx-focus="begin-draft" phx-value-form="comment" phx-value-revision={@drafts["comment"]["revision"]} phx-value-task_id={@task_id}><option value="" selected={@drafts["comment"]["parent_id"] == ""}>New comment</option><option :for={comment <- Enum.filter(@payload["task"]["comments"], &(&1["depth"] < 2))} value={comment["id"]} selected={@drafts["comment"]["parent_id"] == comment["id"]}>{String.slice(comment["text"], 0, 70)} ({comment["id"]})</option></select></label>
+            <label>Comment<textarea name="text" required maxlength="4000" phx-focus="begin-draft" phx-value-form="comment" phx-value-revision={@drafts["comment"]["revision"]} phx-value-task_id={@task_id}>{@drafts["comment"]["text"]}</textarea></label>
+            <button>Post comment</button><button :if={@drafts["comment"]["active"]} type="button" phx-click="reload-draft" phx-value-form="comment">Reload current data (discard draft)</button>
+          </form>
+        </section>
+        <section class="detail-section"><h3>Imported agent & PR reports</h3><p class="muted">Explicit CLI/API imports. No live sync or verified merge is implied.</p>
+          <article :for={report <- @payload["task"]["reports"]} class="imported-report"><strong>{report["provider"]}</strong><p>{report["author"]} · {report["at"]}</p><p>{report["reference"]}</p><a :if={report["url"]} href={report["url"]} target="_blank" rel="noopener noreferrer">Open source</a><small>{report["verification"]}</small><pre>{report["text"]}</pre></article>
+        </section>
         <section class="detail-section"><h3>Pull requests & walkthroughs</h3>
           <p :if={@payload["task"]["links"] == []} class="muted">No linked evidence. No PR has been created by this demo.</p>
           <a :for={link <- @payload["task"]["links"]} class="evidence-link" href={link["url"]} target="_blank" rel="noopener noreferrer">↗ {link["title"]}<small>{link["kind"]} · {link["verification"]}</small></a>
+          <div :for={link <- Enum.filter(@payload["task"]["links"], &(&1["kind"] == "walkthrough"))}>
+            <p :if={Content.embed(link["url"])} class="muted">Loading this walkthrough contacts its external video provider. It remains unverified.</p>
+            <button :if={Content.embed(link["url"])} phx-click="load-walkthrough" phx-value-url={link["url"]}>Load walkthrough: {link["title"]}</button>
+          </div>
+          <iframe :if={@embed_url} class="walkthrough-player" src={@embed_url} title="User-supplied walkthrough" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-presentation" allow="fullscreen" allowfullscreen></iframe>
           <details id="link-panel" phx-mounted={JS.ignore_attributes("open")}><summary>Add an existing evidence link</summary><form id="add-link" phx-submit="link" phx-change="draft"><input type="hidden" name="_form" value="link" /><input type="hidden" name="revision" value={@drafts["link"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} />
             <label>Type<select phx-focus="begin-draft" phx-value-form="link" phx-value-revision={@drafts["link"]["revision"]} phx-value-task_id={@task_id} name="kind"><option value="pull_request" selected={@drafts["link"]["kind"] == "pull_request"}>Pull request</option><option value="walkthrough" selected={@drafts["link"]["kind"] == "walkthrough"}>Walkthrough</option></select></label>
             <label>Title<input phx-focus="begin-draft" phx-value-form="link" phx-value-revision={@drafts["link"]["revision"]} phx-value-task_id={@task_id} name="title" value={@drafts["link"]["title"]} required maxlength="160" /></label><label>HTTPS URL<input phx-focus="begin-draft" phx-value-form="link" phx-value-revision={@drafts["link"]["revision"]} phx-value-task_id={@task_id} type="url" name="url" value={@drafts["link"]["url"]} required maxlength="2000" placeholder="https://…" /></label><button>Add link</button>
           <button :if={@drafts["link"]["active"]} type="button" phx-click="reload-draft" phx-value-form="link">Reload current data (discard draft)</button></form></details>
         </section>
         <section class="detail-section"><h3>Activity <span>Durable service events</span></h3><p :if={task_events(@payload) == []} class="muted">No activity yet.</p>
-          <details :for={event <- Enum.reverse(task_events(@payload))} id={"event-" <> to_string(event["cursor"])} class="activity-event"><summary><strong>{event["op"]}</strong><time>{event["at"]}</time></summary><pre>{Jason.encode!(event, pretty: true)}</pre></details>
+          <details :for={event <- Enum.reverse(task_events(@payload))} id={"event-" <> to_string(event["cursor"])} class="activity-event"><summary><strong>{event["op"]} · {event["actor"]}</strong><time>{event["at"]}</time></summary><div :if={event["op"] == "worklog"} :for={section <- event["result"]["sections"] || []}><h4>{section["title"]}</h4><.section_nodes nodes={section["nodes"]} /></div><p :if={event["op"] == "comment"}>{event["result"]["text"]}</p><pre :if={event["op"] not in ["worklog", "comment"]}>{Jason.encode!(event, pretty: true)}</pre></details>
         </section>
       </section>
     </div>

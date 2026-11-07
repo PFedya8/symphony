@@ -540,3 +540,11 @@ body:has(.work-board) { background: #f5f6fa; color: #243044; }
 
 .task-detail.full-page { width:100%; padding-left:max(24px,calc((100vw - 1000px)/2)); padding-right:max(24px,calc((100vw - 1000px)/2)); }
 .task-card[draggable] { cursor:grab; }
+.authored-nodes { margin:8px 0; padding-left:22px; line-height:1.7; overflow-wrap:anywhere; white-space:pre-wrap; }
+.thread-comment { padding:16px 0 8px; border-top:1px solid #e4dfef; overflow-wrap:anywhere; }
+.thread-comment .thread-comment { margin:12px 0 0 16px; border-left:2px solid #e4dfef; padding-left:14px; }
+.thread-comment p { white-space:pre-wrap; }
+.thread-comment time, .thread-comment small { font-size:10px; color:#697489; }
+.walkthrough-player { width:100%; aspect-ratio:16/9; border:0; margin-top:14px; }
+.imported-report { padding:15px; background:#f7f6fb; margin:12px 0; overflow-wrap:anywhere; }
+.imported-report pre { white-space:pre-wrap; overflow-wrap:anywhere; }

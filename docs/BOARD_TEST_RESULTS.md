@@ -19,10 +19,10 @@ real agent execution, external write or deployment was added.
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 321 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 326 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
-| Python CLI regression suite | 12 tests passed, including local HTTP argument checks and board command payloads |
+| Python CLI regression suite | 17 tests passed, including local HTTP argument checks and board command payloads |
 | HTTP/CLI/restart smoke | Passed against a fresh isolated database on port 4001 |
 | Desktop Chromium | Nine columns, drag/drop with persisted counts, project filter, expanded detail navigation, start/stop/hold/retry, plan edit/check, evidence link and activity disclosure passed |
 | Mobile-sized Chromium (390 × 844) | Cross-browser persisted state, board/detail views, task creation and stage move passed |
@@ -76,7 +76,7 @@ persisted state, creates another task and moves it to Todo.
 
 These are browser captures, not designs or mockups. They contain only synthetic
 tasks and an explicitly supplied repository PR link. No login token appears.
-The first five captures show the expanded workflow board; the last two capture the
+The first five captures show the expanded workflow board; captures six and seven show the
 concurrent-edit and mobile-feedback fixes. Older single-task screenshots remain
 historical evidence in `screenshots/manual-demo`.
 
@@ -90,7 +90,7 @@ reload takes effect, and mobile errors are not obscured by the full-screen panel
 ## Limits and remaining work
 
 This is a functional fixture board, **not full parity with the Linear video**.
-Plans are manually maintained; the three-second worker is a fixed simulator.
+Plans and authored sections are manually maintained; the three-second worker is a fixed simulator.
 Tracker import, actual agent-generated plans, automatic PR creation/status sync,
 Calendar/Google Tasks, tenant permissions and hosted phone access
 are not implemented or verified. Column transitions use drag-and-drop or an accessible selector. No real issue
@@ -101,8 +101,8 @@ instances/tokens/databases are required for access isolation. All links remain
 unverified and are never fetched by the server. The Go comparison implementation
 has not been ported to this new board/schema by this PR.
 
-The schema is now version 2. Back up an old database while stopped before opening
-it with this version; rollback needs the version-1 backup. Unknown active runs
+The schema is now version 3. Back up an old database while stopped before opening
+it with this version; rollback needs the pre-upgrade backup. Unknown active runs
 are interrupted on restart, not automatically adopted or replayed. The suite
 checks expiry handling but does not wait two minutes to verify real wall-clock
 expiry end to end. Real-device Safari/accessibility audits and production load
@@ -118,13 +118,44 @@ not a claim of pixel or runtime parity with Linear.
 | Drag cards and update counts | Desktop native drag/drop calls shared `move`; counts update after persisted success | Touch uses stage selector; no optimistic movement |
 | Backlog/Todo/In Progress/Human Review/Merging/Done, Rework/Canceled/Duplicate | Nine persisted stages, available through UI/API/CLI | No automatic real merge or release verification |
 | Full-page task detail | Expand task toggles a full-width view with the existing shared task state | Original Symphony styling, not Linear parity |
-| Authored nested Plan, Acceptance Criteria, Validation in activity | Editable flat checklist, description and durable command activity | No rich authored activity document or nested sections |
-| GitHub PR and walkthrough | HTTPS links supplied by operator and labeled unverified | No automatic PR creation/status synchronization; no embedded media |
-| Replies and comments | Not implemented | Requires persisted authored comments, identity semantics and moderation/resource limits |
+| Authored nested Plan, Acceptance Criteria, Validation in activity | Immutable authored updates with three nested levels and durable activity; shared API/CLI/UI | Operator authored, not automatic agent-generated content |
+| GitHub PR and walkthrough | Real one-shot GitHub PR API import; HTTPS links; opt-in Vimeo/YouTube embeds | No automatic PR creation/status synchronization; provider playback not verified |
+| Replies and comments | Durable three-level plain-text threads; authenticated shared operator; bounded resources | Individual users, edit/delete and moderation workflow not implemented |
 | Agent workflow and merge completion | Fixed simulator moves its own task to Human Review; operators may move Merging/Done | Real agent/tracker/PR integration and verified merge transitions are not connected |
 
-A safe next increment would add bounded authored sections/comments to the shared
-service, snapshot schema, HTTP and CLI before the UI. Real PR synchronization
-then needs a repository mapping, authorized connector, webhook/poll ownership and
-reconciliation tests. Arbitrary media is currently linked rather than embedded;
-a future embed needs explicit provider handling and content/security controls.
+The shared service now includes these authored sections, comments and reports.
+Existing runtime observation can be imported from its loopback issue API without
+copying raw agent messages, logs or workspace paths. Reviewed agent artifacts
+have a separate bounded import path. These are explicit one-shot operations,
+not a new scheduler or automatic live agent/PR integration.
+
+## Authored content and integration verification
+
+- Actual Chromium: nested sections, published activity, comments/replies,
+  UI/CLI parity, reviewed synthetic agent artifact import, desktop/mobile views.
+- Actual GitHub API: imported public PR #4 using `tasks import-pr`, then verified
+  its provider/reference/receipt provenance and visible report in the UI. This
+  was a read-only source request and a local fixture write, not a merge.
+- Runtime import: exercised the actual HTTP importer against a synthetic local
+  server using the existing Presenter issue contract. No configured production
+  runtime/real Codex session was available, so live agent integration is untested.
+- Video embed: proved no iframe/provider request before opt-in, exact canonical
+  source and sandbox/referrer policy after opt-in. The provider request was
+  aborted by the browser test; playback is explicitly untested.
+- ExUnit: restart persistence, legacy schema-2 migration, HTML escaping,
+  cross-task reply rejection, nesting/resource bounds, authored history,
+  provider URL rejection and real CLI round trips.
+- Python: selected artifact fields, bounded input, canonical GitHub requests,
+  excluded secrets/body, redirect rejection, local-runtime HTTP import and
+  unsafe source refusal; existing opaque-ID regressions retained.
+
+New actual screenshots:
+
+- [Nested authored plan](screenshots/board/08-authored-plan-desktop.png)
+- [Mobile comments/replies](screenshots/board/09-comments-mobile.png)
+- [Imported artifact and opt-in walkthrough](screenshots/board/10-imports-walkthrough-mobile.png)
+- [Actual public GitHub PR API import](screenshots/board/11-github-import-desktop.png)
+
+The first full gate attempt hit an existing core retry-timer test's five-second
+`:sys.get_state` timeout. That unchanged test passed immediately in isolation;
+the full gate then passed without weakening the test or quality checks.
