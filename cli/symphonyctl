@@ -20,6 +20,27 @@ def request(path, payload=None):
         return json.load(response)
 
 
+def normalize_identifier(argv):
+    """Keep opaque leading-hyphen IDs positional without changing known options."""
+    value_options = {'--approval', '--revision', '--key', '--reason'}
+    flags = {'--json', '--dry-run', '--follow', '-h', '--help'}
+    index = 2  # group and action precede the optional identifier
+    while index < len(argv):
+        arg = argv[index]
+        if arg == '--':
+            return argv
+        if arg in value_options:
+            index += 2
+            continue
+        if arg in flags or any(arg.startswith(option + '=') for option in value_options):
+            index += 1
+            continue
+        if arg.startswith('-'):
+            return argv[:index] + argv[index + 1:] + ['--', arg]
+        return argv
+    return argv
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('group', choices=['capabilities', 'sync', 'tasks', 'runs'])
@@ -32,7 +53,7 @@ def main():
     parser.add_argument('--key', default=str(uuid.uuid4()))
     parser.add_argument('--reason')
     parser.add_argument('--follow', action='store_true')
-    args = parser.parse_args()
+    args = parser.parse_args(normalize_identifier(sys.argv[1:]))
     if args.reason:
         parser.error('--reason text persistence is not supported by the fixed-output fixture demo')
     if args.group == 'capabilities':
