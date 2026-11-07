@@ -68,3 +68,7 @@ The [opt-in GitLab runtime board](docs/MANUAL_DEMO_GUIDE.md#opt-in-gitlab-runtim
 connects automatic issue discovery to the existing Symphony worker lifecycle with
 explicit approval per attempt. Synthetic integration tests cover this path; live
 provider execution and automatic PR/merge synchronization are not claimed.
+
+Real execution from the GitLab board is currently blocked pending verified OS
+containment. Issue discovery and review remain available; orchestration execution
+is exercised only with synthetic test fixtures. See the operator guide for details.

@@ -1,10 +1,19 @@
 # Board contract for Elixir and other implementations
 
+> **Current execution status:** Real board execution is disabled in non-test builds.
+> Independent probes showed that process-group cleanup can miss job-control groups,
+> surviving children after supervision-owner failure, and background work retaining
+> stdout. The environment has read-only cgroup v2 and no verified delegated isolation.
+> `preview`, `start` and `retry` therefore return `runtime_execution_unavailable`.
+> GitLab discovery, task review, comments and evidence remain available. Test-only
+> synthetic execution exercises orchestration but is not a production deployment option.
+
+
 The HTTP/CLI contract is shared by fixture and opt-in GitLab runtime modes. This
 file describes the Elixir implementation; another implementation must explicitly
 advertise its supported mode. It does not imply Go has runtime support.
 
-- Existing `/api/v1/tasks` and task command routes, revision checks, actor ownership,
+- Existing `/api/v1/control/snapshot` and `/api/v1/control/commands` routes, revision checks, actor ownership,
   idempotency keys and approval requirements remain in force. See the CLI help
   and manual guide for payload examples. Do not share SQLite files across languages.
 - Runtime snapshots advertise `mode: gitlab_runtime`; capabilities advertise

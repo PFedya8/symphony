@@ -1,5 +1,14 @@
 # Symphony board: operator guide
 
+> **Current execution status:** Real board execution is disabled in non-test builds.
+> Independent probes showed that process-group cleanup can miss job-control groups,
+> surviving children after supervision-owner failure, and background work retaining
+> stdout. The environment has read-only cgroup v2 and no verified delegated isolation.
+> `preview`, `start` and `retry` therefore return `runtime_execution_unavailable`.
+> GitLab discovery, task review, comments and evidence remain available. Test-only
+> synthetic execution exercises orchestration but is not a production deployment option.
+
+
 This is an original Symphony board informed by the workflow shown in the README
 video. It supports the default synthetic fixture and a separate opt-in GitLab
 runtime mode described below. Live production integration has not been validated.
@@ -387,6 +396,10 @@ Symphony AgentRunner only after a human preview/approval. It adds no scheduler.
 Use [the workflow example](../elixir/runtime-board-workflow.example.md) with the
 normal Symphony executable, not `demo.exs`. See [the API contract](BOARD_API_CONTRACT.md).
 
+The configuration below supports discovery/review now. The real launch steps
+remain disabled until verified containment is implemented; they describe the
+intended future deployment requirements.
+
 Required configuration:
 
 1. Select the GitLab API endpoint and project (`GITLAB_API_URL`,
@@ -448,7 +461,7 @@ Reproduce the local integration without external credentials:
 ```bash
 # Install existing dependencies first; use a fresh disposable local token.
 cd elixir
-SYMPHONY_BOARD_TOKEN="$DISPOSABLE_TEST_TOKEN" mix run --no-start ../scripts/runtime_board_fixture.exs
+MIX_ENV=test SYMPHONY_BOARD_TOKEN="$DISPOSABLE_TEST_TOKEN" mix run --no-start ../scripts/runtime_board_fixture.exs
 # In another terminal with Playwright installed:
 SYMPHONY_BOARD_TOKEN="$DISPOSABLE_TEST_TOKEN" node scripts/check_runtime_board.cjs
 ```
@@ -487,3 +500,26 @@ to host files/process metadata, and already-issued remote effects are outside th
 guarantee. Live deployments must use appropriate OS/container isolation and reviewed
 hooks; do not treat environment scrubbing as credential isolation from arbitrary
 host-level code. No such live deployment was performed here.
+
+### Immutable provider bindings and the containment blocker
+
+GitLab tool bindings now resolve endpoint, project and credential from one environment
+snapshot. The host-only bound settings redact the credential when inspected and never
+re-expand a literal value beginning with `$`. Original secret-variable names remain
+available to child-environment scrubbing. Board tools compare the current configuration
+generation on every call, before invoking the provider. A rotation racing that check
+cannot change an already-bound request's endpoint/project/token; it can at most finish
+against the original approved scope. Already-sent requests cannot be recalled.
+
+Earlier process-group tests demonstrated cleanup only for ordinary descendants in the
+owned group. Further independent probes disproved broader containment. Real board
+execution is now blocked at authorization and dispatch; the prior lifecycle observations
+and screenshots are synthetic evidence, not proof of safe real execution.
+
+Enabling real execution requires a separately implemented and verified OS boundary
+(e.g. a delegated cgroup/container with cleanup independent of the Erlang owner),
+including job-control groups, owner failure and inherited-pipe tests. The current
+runtime exposes no production opt-out. Only test-compiled builds plus an internal
+synthetic-fixture flag can exercise execution. Do not deploy test builds or add live
+credentials to the fixture. The existing non-board autonomous scheduler is unchanged;
+it is outside this board containment guarantee.

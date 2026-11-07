@@ -1,4 +1,6 @@
 ---
+# Real board execution is currently disabled pending verified OS containment.
+# This config enables issue discovery and review, not permission to launch workers.
 tracker:
   kind: gitlab
   active_states: [opened]

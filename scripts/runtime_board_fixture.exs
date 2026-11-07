@@ -1,3 +1,4 @@
+# Run only with MIX_ENV=test; production/dev builds intentionally reject runtime execution.
 # Local synthetic provider + Codex protocol fixture using the production orchestrator path.
 # No real GitLab requests, repository checkout or Codex credentials are used.
 defmodule SymphonyRuntimeFixtureProvider do
@@ -51,6 +52,7 @@ File.write!(workflow, "---\n" <> Jason.encode!(config) <> "\n---\nSynthetic loca
 Application.put_env(:symphony_elixir, :workflow_file_path, workflow)
 Application.put_env(:symphony_elixir, :gitlab_client_module, SymphonyRuntimeFixtureProvider)
 Application.put_env(:symphony_elixir, :demo, false)
+Application.put_env(:symphony_elixir, :synthetic_board_execution, true)
 {:ok, _} = Application.ensure_all_started(:symphony_elixir)
 IO.puts("Synthetic runtime fixture ready on loopback port 4000")
 Process.sleep(:infinity)

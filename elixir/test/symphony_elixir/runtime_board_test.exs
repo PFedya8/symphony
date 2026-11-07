@@ -1,6 +1,7 @@
 defmodule SymphonyElixir.RuntimeBoardTest do
   use SymphonyElixir.TestSupport
   alias SymphonyElixir.{AgentRuntimeSupervisor, RuntimeBoard, Service}
+  alias SymphonyElixir.GitLab.Client, as: GitLabClient
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
   @endpoint SymphonyElixirWeb.Endpoint
@@ -18,6 +19,9 @@ defmodule SymphonyElixir.RuntimeBoardTest do
   end
 
   setup do
+    previous_execution = Application.get_env(:symphony_elixir, :synthetic_board_execution)
+    Application.put_env(:symphony_elixir, :synthetic_board_execution, true)
+    on_exit(fn -> restore_app(:synthetic_board_execution, previous_execution) end)
     root = Path.dirname(Workflow.workflow_file_path())
     token = System.get_env("SYMPHONY_BOARD_TOKEN")
     client = Application.get_env(:symphony_elixir, :gitlab_client_module)
@@ -342,7 +346,7 @@ defmodule SymphonyElixir.RuntimeBoardTest do
     assert render(view) =~ "GitLab runtime"
     refute has_element?(view, "#create-task")
     view |> element("button[phx-click=preview]") |> render_click()
-    assert has_element?(view, "button", "Approve real worker attempt")
+    assert has_element?(view, "button", "Approve synthetic runtime attempt")
     view |> form("#add-comment", %{text: "Shared actual issue"}) |> render_submit()
     assert length(snapshot()["task"]["comments"]) == 1
   end
@@ -428,6 +432,115 @@ defmodule SymphonyElixir.RuntimeBoardTest do
     assert hd(snapshot()["runs"])["state"] == "blocked"
     assert :sys.get_state(BoardOwner).retry_attempts == %{}
     assert File.read!(marker) == "x"
+  end
+
+  test "bound GitLab tools pin credentials and destination across rotation races", %{config: config} do
+    names = ~w(SYNTHETIC_GITLAB_ENDPOINT SYNTHETIC_GITLAB_PROJECT SYNTHETIC_GITLAB_PAT)
+    previous = Map.new(names, &{&1, System.get_env(&1)})
+    on_exit(fn -> Enum.each(previous, fn {name, value} -> restore_env(name, value) end) end)
+    original = Enum.zip(names, ["https://old.synthetic.invalid/api/v4", "synthetic/one", "$literal-synthetic-secret"])
+    Enum.each(original, fn {name, value} -> System.put_env(name, value) end)
+    provider = %{"api_url" => "$SYNTHETIC_GITLAB_ENDPOINT", "project_path" => "$SYNTHETIC_GITLAB_PROJECT", "api_key" => "$SYNTHETIC_GITLAB_PAT"}
+    write_config(put_in(config, ["tracker", "provider"], provider))
+    binding = Tracker.bind_agent_tools()
+    assert "SYNTHETIC_GITLAB_PAT" in binding.secret_environment_names
+    refute inspect(binding) =~ "$literal-synthetic-secret"
+    args = %{"method" => "GET", "path" => "/projects/synthetic%2Fone/issues/1"}
+    changed = Enum.zip(names, ["https://new.synthetic.invalid/api/v4", "synthetic/two", "new-synthetic-secret"])
+
+    for {name, value} <- changed do
+      System.put_env(name, value)
+      response = Tracker.execute_bound_agent_tool(binding, "gitlab_api", args, gitlab_client: fn _, _, _, _, _ -> flunk("stale binding reached transport") end)
+      refute response["success"]
+      refute response["output"] =~ "synthetic-secret"
+      Enum.each(original, fn {key, value} -> System.put_env(key, value) end)
+    end
+
+    # Rotate after Tracker's generation check, immediately before Client resolves settings.
+    racing_client = fn method, path, query, body, opts ->
+      Enum.each(changed, fn {name, value} -> System.put_env(name, value) end)
+
+      transport = fn _, _, _, _, settings ->
+        assert settings.api_url == "https://old.synthetic.invalid/api/v4"
+        assert settings.project_path == "synthetic/one"
+        assert settings.api_key == "$literal-synthetic-secret"
+        {:ok, %{status: 200, body: %{observed: "original scope only"}}}
+      end
+
+      GitLabClient.request(method, path, query, body, Keyword.put(opts, :request_fun, transport))
+    end
+
+    assert Tracker.execute_bound_agent_tool(binding, "gitlab_api", args, gitlab_client: racing_client)["success"]
+    File.write!(Workflow.workflow_file_path(), "---\nboard: [invalid]\n---\ninvalid")
+    assert {:error, _} = WorkflowStore.force_reload()
+    refute Tracker.execute_bound_agent_tool(binding, "gitlab_api", args, gitlab_client: racing_client)["success"]
+  end
+
+  test "invalid provider binding fails without retaining secret values", %{config: config} do
+    name = "SYNTHETIC_INVALID_BIND_ENDPOINT"
+    previous = System.get_env(name)
+    on_exit(fn -> restore_env(name, previous) end)
+    System.put_env(name, "https://synthetic.invalid/api/v4")
+    write_config(put_in(config, ["tracker", "provider", "api_url"], "$" <> name))
+    System.put_env(name, "invalid endpoint")
+    assert_raise ArgumentError, "Cannot bind invalid GitLab provider settings", &Tracker.bind_agent_tools/0
+  end
+
+  for failure <- [:job_control_group, :supervision_owner_death, :background_stdout] do
+    @tag :containment_characterization
+    test "synthetic containment limitation #{failure} keeps production execution blocked", %{root: root} do
+      failure = unquote(failure)
+      late = Path.join(root, "known-containment-gap")
+      binary = Path.join(root, "fake-codex")
+
+      action = containment_action(failure, late)
+
+      script = File.read!(binary) |> String.replace("#!/bin/sh", "#!/bin/bash") |> String.replace("sleep 0.3", action)
+      File.write!(binary, script)
+      start_runtime()
+      {:ok, preview} = command("preview")
+      {:ok, run} = command("start", %{"approval" => preview["id"]})
+      eventually(fn -> Enum.any?(snapshot()["runs"], &(&1["observation"]["event"] == "session_started")) end)
+
+      apply_containment_failure(failure, run)
+
+      # This is deliberately a characterization of the rejected process-group boundary,
+      # not a claim of containment. All fixture children self-exit within two seconds.
+      eventually(fn -> File.exists?(late) end)
+      Process.sleep(2100)
+      Application.put_env(:symphony_elixir, :synthetic_board_execution, false)
+      assert {:error, "runtime_execution_unavailable"} = command("preview")
+    end
+  end
+
+  defp containment_action(:job_control_group, late), do: "set -m\n(sleep 0.5; printf observed > '#{late}') &\nsleep 2"
+  defp containment_action(:supervision_owner_death, late), do: "sleep 0.5; printf observed > '#{late}'"
+  defp containment_action(:background_stdout, late), do: "(sleep 0.5; printf observed > '#{late}') &\nexit 0"
+  defp apply_containment_failure(:job_control_group, run), do: assert({:ok, _} = command("stop", %{"run_id" => run["id"]}))
+  defp apply_containment_failure(:supervision_owner_death, _), do: Process.exit(Process.whereis(SymphonyElixir.LocalProcesses), :kill)
+  defp apply_containment_failure(:background_stdout, _), do: :ok
+
+  test "production containment gate blocks all new worker authorization", %{root: root, marker: marker} do
+    Application.put_env(:symphony_elixir, :synthetic_board_execution, false)
+    start_runtime()
+    assert {:ok, capabilities} = command("capabilities")
+    refute capabilities["execution_available"]
+    refute snapshot()["execution_available"]
+
+    for operation <- ~w(preview start retry) do
+      assert {:error, "runtime_execution_unavailable"} = command(operation)
+    end
+
+    assert :sys.get_state(BoardOwner).running == %{}
+    assert :sys.get_state(BoardOwner).board.data["approvals"] == %{}
+    refute File.exists?(marker)
+    refute File.exists?(Path.join(root, "workspaces/GL-1"))
+    assert {:ok, _} = command("comment", %{"text" => "Review remains available"})
+    start_supervised!({HttpServer, port: 0, host: "127.0.0.1"})
+    token = System.fetch_env!("SYMPHONY_BOARD_TOKEN")
+    conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
+    {:ok, view, _} = live(conn, "/tasks?task=1")
+    assert render(view) =~ "Execution unavailable: verified OS containment is required"
   end
 
   test "bound GitLab tool cannot mutate or read another project's endpoints" do

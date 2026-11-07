@@ -2,7 +2,11 @@ defmodule SymphonyElixir.RuntimeBoard do
   @moduledoc "Durable GitLab board projection owned exclusively by the existing orchestrator."
   alias SymphonyElixir.{Config, Demo, PathSafety, Workflow}
   alias SymphonyElixir.Demo.Store
+  @synthetic_test_build Application.compile_env(:symphony_elixir, :synthetic_board_test_build, false)
   @active ~w(authorized starting running stopping)
+
+  @spec execution_enabled?() :: boolean()
+  def execution_enabled?, do: @synthetic_test_build and Application.get_env(:symphony_elixir, :synthetic_board_execution, false)
 
   @spec open(map(), keyword()) :: map() | nil
   def open(%{board: %{enabled: false}}, _opts), do: nil
@@ -11,7 +15,7 @@ defmodule SymphonyElixir.RuntimeBoard do
     if config.tracker.kind != "gitlab" or config.agent.max_concurrent_agents != 1,
       do: raise("Runtime board requires GitLab and agent.max_concurrent_agents=1")
 
-    require_process_tools!()
+    if execution_enabled?(), do: require_process_tools!()
     if config.worker.ssh_hosts != [], do: raise("Runtime board currently requires local worker execution")
     if byte_size(System.get_env("SYMPHONY_BOARD_TOKEN") || "") < 32, do: raise("Runtime board token must contain at least 32 bytes")
     if config.server.host not in ["127.0.0.1", "localhost", "::1"], do: raise("Runtime board must bind to loopback")
@@ -79,20 +83,20 @@ defmodule SymphonyElixir.RuntimeBoard do
     File.chmod!(root, 0o700)
   end
 
-  @spec configuration_fingerprint(map()) :: String.t()
-  def configuration_fingerprint(config) do
+  @spec configuration_fingerprint(map(), map()) :: String.t()
+  def configuration_fingerprint(config, environment \\ System.get_env()) do
     scope = Map.take(Map.from_struct(config), [:tracker, :workspace, :worker, :agent, :codex, :hooks, :board])
 
     provider_env =
       Enum.map(config.tracker.provider, fn
-        {key, "$" <> name} -> {key, System.get_env(name)}
+        {key, "$" <> name} -> {key, environment[name]}
         {key, value} -> {key, value}
       end)
       |> Enum.sort()
 
-    fallback = Enum.map(~w(GITLAB_PROJECT_PATH GITLAB_API_URL GITLAB_PAT), &System.get_env/1)
+    fallback = Enum.map(~w(GITLAB_PROJECT_PATH GITLAB_API_URL GITLAB_PAT), &environment[&1])
 
-    :crypto.hash(:sha256, :erlang.term_to_binary({scope, provider_env, fallback, System.get_env("SYMPHONY_BOARD_TOKEN"), Path.expand(Workflow.workflow_file_path()), Config.workflow_prompt()}))
+    :crypto.hash(:sha256, :erlang.term_to_binary({scope, provider_env, fallback, environment["SYMPHONY_BOARD_TOKEN"], Path.expand(Workflow.workflow_file_path()), Config.workflow_prompt()}))
     |> Base.encode16()
   end
 
@@ -173,7 +177,10 @@ defmodule SymphonyElixir.RuntimeBoard do
 
       req["op"] == "capabilities" ->
         {{:ok, capabilities}, board} = Demo.command(req, board)
-        {{:ok, Map.merge(capabilities, %{"mode" => "gitlab_runtime", "simulated" => false, "execution_owner" => "existing_orchestrator"})}, board}
+        {{:ok, Map.merge(capabilities, %{"mode" => "gitlab_runtime", "simulated" => false, "execution_owner" => "existing_orchestrator", "execution_available" => execution_enabled?()})}, board}
+
+      execution_denied?(req) ->
+        {{:error, "runtime_execution_unavailable"}, board}
 
       req["op"] == "preview" ->
         preview(req, board)
@@ -182,6 +189,8 @@ defmodule SymphonyElixir.RuntimeBoard do
         Demo.command(runtime_request(req), board)
     end
   end
+
+  defp execution_denied?(req), do: req["op"] in ~w(preview start retry) and not execution_enabled?()
 
   defp preview(req, board) do
     case Demo.command(req, board) do
@@ -219,15 +228,30 @@ defmodule SymphonyElixir.RuntimeBoard do
 
     if task_id do
       {{:ok, payload}, board} = Demo.command(Map.put(req, "task_id", task_id), board)
-      {{:ok, payload |> Map.put("mode", "gitlab_runtime") |> Map.put("runtime_error", if(current?(board), do: nil, else: "runtime_scope_changed"))}, board}
+
+      {{:ok,
+        payload |> Map.put("mode", "gitlab_runtime") |> Map.put("execution_available", execution_enabled?()) |> Map.put("runtime_error", if(current?(board), do: nil, else: "runtime_scope_changed"))},
+       board}
     else
       empty = %{"id" => "", "revision" => 0, "stage" => "Backlog", "plan" => [], "documents" => [], "comments" => [], "reports" => [], "links" => []}
-      {{:ok, %{"mode" => "gitlab_runtime", "task" => empty, "tasks" => [], "runs" => [], "events" => [], "stages" => [], "board_revision" => 1, "approval_valid" => false}}, board}
+
+      {{:ok,
+        %{
+          "mode" => "gitlab_runtime",
+          "execution_available" => execution_enabled?(),
+          "task" => empty,
+          "tasks" => [],
+          "runs" => [],
+          "events" => [],
+          "stages" => [],
+          "board_revision" => 1,
+          "approval_valid" => false
+        }}, board}
     end
   end
 
   @spec authorized?(map(), String.t()) :: boolean()
-  def authorized?(board, id), do: current?(board) and Enum.any?(board.data["runs"], &(&1["task_id"] == id and &1["state"] == "authorized"))
+  def authorized?(board, id), do: execution_enabled?() and current?(board) and Enum.any?(board.data["runs"], &(&1["task_id"] == id and &1["state"] == "authorized"))
 
   @spec authorized_issue?(map() | nil, SymphonyElixir.Tracker.Issue.t()) :: boolean()
   def authorized_issue?(nil, _), do: true

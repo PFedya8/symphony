@@ -2343,3 +2343,8 @@ normal autonomous scheduling when the mode is disabled. Isolate provider project
 database and workspace ownership, fence changed runtime configuration, restrict
 board-bound provider tools to project-scoped reads, and distinguish observed worker
 completion from verified review/merge. See docs/BOARD_API_CONTRACT.md.
+
+The optional board must fail closed for new execution when external-process
+containment is unverified. Unix process groups alone do not establish that boundary.
+Provider tool bindings must pin resolved endpoint/project/credentials and reject
+stale configuration generations; an in-flight race must not adopt a new scope.

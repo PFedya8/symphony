@@ -17,5 +17,6 @@ config :symphony_elixir, SymphonyElixirWeb.Endpoint,
 
 if config_env() == :test do
   config :symphony_elixir,
+    synthetic_board_test_build: true,
     workflow_file_path: Path.expand("../test/fixtures/startup_workflow.md", __DIR__)
 end

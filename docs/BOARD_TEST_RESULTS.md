@@ -1,5 +1,14 @@
 # Multi-task board verification — 2026-11-07 UTC
 
+> **Current execution status:** Real board execution is disabled in non-test builds.
+> Independent probes showed that process-group cleanup can miss job-control groups,
+> surviving children after supervision-owner failure, and background work retaining
+> stdout. The environment has read-only cgroup v2 and no verified delegated isolation.
+> `preview`, `start` and `retry` therefore return `runtime_execution_unavailable`.
+> GitLab discovery, task review, comments and evidence remain available. Test-only
+> synthetic execution exercises orchestration but is not a production deployment option.
+
+
 Branch: `feat/manual-task-board`, following the previously tested manual
 fixture in merged PR #2. The board commit is not part of that earlier merge. Runtime: Elixir 1.19.5 / OTP 28.5.0.6 in the same official Elixir container
 used for earlier checks. Native Chromium + Playwright exercised the UI through a
@@ -20,7 +29,7 @@ No competing scheduler, live provider write or deployment was added.
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 354 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 360 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
 | Python CLI regression suite | 19 tests passed, including local HTTP argument checks and board command payloads |
@@ -219,3 +228,27 @@ resolution is tested using the exact form shipped in the workflow example.
 
 These are local synthetic checks, not hostile-process containment or live provider
 validation. The guide documents process-group and host-isolation limitations.
+
+## Containment reassessment and immutable GitLab binding
+
+Three synthetic board-path characterization tests reproduce the rejected boundary:
+a same-session job-control group writes after stop; a child writes after the Erlang
+process owner is killed; and background work retaining stdout writes after its shell
+exits. The fixtures self-exit and use no external credentials. These tests establish
+why production execution is blocked, not that those escape paths are fixed.
+
+The production gate rejects preview/start/retry before granting approvals or launching
+work. A non-test build was additionally checked with the synthetic flag set and still
+reported execution disabled. Chromium on a 390×844 viewport verified the blocker,
+empty run history, absent approval control and continuing task discovery:
+[Execution blocked, mobile](screenshots/board/15-runtime-disabled-mobile.png).
+Reproduce with the non-test synthetic provider fixture and
+`node scripts/check_runtime_board_disabled.cjs` using a disposable token and native
+Chromium. Execution fixtures require `MIX_ENV=test` and must never be deployed.
+
+GitLab binding regressions rotate endpoint, project and PAT independently; stale
+bindings never reach transport. Another test rotates all three after the generation
+check but before Client request construction: only the original bound endpoint,
+project and credential reach injected transport. Literal `$`-prefixed secrets stay
+literal, custom secret environment names remain scrubbed and inspected bindings redact
+credentials. Invalid configuration/binding fails closed. No live provider was contacted.

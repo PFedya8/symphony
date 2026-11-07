@@ -8,6 +8,7 @@ defmodule SymphonyElixir.Tracker do
   """
 
   alias SymphonyElixir.Config
+  alias SymphonyElixir.GitLab.Client, as: GitLabClient
   alias SymphonyElixir.Tracker.Issue
 
   @adapters %{
@@ -48,13 +49,15 @@ defmodule SymphonyElixir.Tracker do
   @spec bind_agent_tools() :: map()
   def bind_agent_tools do
     config = Config.settings!()
+    environment = System.get_env()
     tracker_settings = config.tracker
     adapter = adapter_for_settings!(tracker_settings)
 
     %{
       adapter: adapter,
-      board_policy: board_policy(config),
-      tracker_settings: tracker_settings,
+      board_policy: board_policy(config, environment),
+      board_generation: if(config.board.enabled, do: SymphonyElixir.RuntimeBoard.configuration_fingerprint(config, environment)),
+      tracker_settings: freeze_provider(tracker_settings, environment),
       tool_specs: adapter_agent_tool_specs(adapter),
       secret_environment_names: adapter_secret_environment_names(adapter, tracker_settings)
     }
@@ -67,20 +70,43 @@ defmodule SymphonyElixir.Tracker do
         arguments,
         opts \\ []
       ) do
-    if board_tool_allowed?(Map.get(binding, :board_policy, :standard), tool, arguments) do
+    if binding_current?(binding) and board_tool_allowed?(Map.get(binding, :board_policy, :standard), tool, arguments) do
       execute_agent_tool_with_adapter(adapter, tool, arguments, Keyword.put(opts, :tracker_settings, tracker_settings))
     else
-      unsupported_agent_tool_response("board policy: configured-project GitLab issue/MR reads only")
+      unsupported_agent_tool_response("board scope changed or request outside configured-project read policy")
     end
   end
 
-  defp board_policy(%{board: %{enabled: false}}), do: :standard
+  defp freeze_provider(%{kind: "gitlab"} = tracker, environment) do
+    case GitLabClient.bind_settings(tracker, environment) do
+      {:ok, settings} -> settings
+      {:error, _} -> raise ArgumentError, "Cannot bind invalid GitLab provider settings"
+    end
+  end
 
-  defp board_policy(config) do
+  defp freeze_provider(tracker, _environment), do: tracker
+
+  defp binding_current?(binding) do
+    case Map.get(binding, :board_generation) do
+      nil ->
+        true
+
+      generation ->
+        with :ok <- Config.validate!(), {:ok, config} <- Config.settings() do
+          generation == SymphonyElixir.RuntimeBoard.configuration_fingerprint(config)
+        else
+          _ -> false
+        end
+    end
+  end
+
+  defp board_policy(%{board: %{enabled: false}}, _environment), do: :standard
+
+  defp board_policy(config, environment) do
     project =
       case config.tracker.provider["project_path"] do
-        "$" <> name -> System.get_env(name) || System.get_env("GITLAB_PROJECT_PATH")
-        nil -> System.get_env("GITLAB_PROJECT_PATH")
+        "$" <> name -> environment[name] || environment["GITLAB_PROJECT_PATH"]
+        nil -> environment["GITLAB_PROJECT_PATH"]
         value -> value
       end
 

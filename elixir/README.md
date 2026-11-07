@@ -449,3 +449,7 @@ separate scoped state/workspace roots; disabling it restores automatic schedulin
 Runtime board subprocesses require `setsid` and `kill`; operator credentials are
 scrubbed from child environments and token/configuration changes revoke connected
 board sessions. See the guide for process-group and OS-isolation limitations.
+
+**Current limitation:** non-test builds reject board preview/start/retry until a
+verified OS containment boundary is implemented. Process groups alone were insufficient.
+The GitLab discovery/review UI remains usable. Never deploy synthetic test builds.
