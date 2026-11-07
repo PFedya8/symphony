@@ -445,3 +445,7 @@ Symphony worker attempt, see [runtime-board-workflow.example.md](runtime-board-w
 and the [runtime board guide](../docs/MANUAL_DEMO_GUIDE.md#opt-in-gitlab-runtime-board).
 This mode is opt-in, local-worker-only, loopback-only and single-worker. It uses
 separate scoped state/workspace roots; disabling it restores automatic scheduling.
+
+Runtime board subprocesses require `setsid` and `kill`; operator credentials are
+scrubbed from child environments and token/configuration changes revoke connected
+board sessions. See the guide for process-group and OS-isolation limitations.

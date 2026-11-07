@@ -456,3 +456,34 @@ SYMPHONY_BOARD_TOKEN="$DISPOSABLE_TEST_TOKEN" node scripts/check_runtime_board.c
 Run the browser command from the repository root. The fixture binds loopback port
 4000, uses a fresh temporary database/workspace and explicitly synthetic tasks.
 It stays alive until stopped. No public link or remote ingress is created.
+
+### Runtime credential and process boundaries
+
+Board and demo operator tokens are removed from app-server, hook, SSH-client and
+cleanup-command environments. Environment aliases with exactly the same value
+as a protected token are removed too, including aliases of the configured demo
+application token. Worker launch shells repeat the unset after login profiles.
+Provider credentials already scrubbed from Codex remain scrubbed; reviewed checkout
+hooks may still use their separately configured repository credentials.
+
+Connected board sessions revalidate their token digest and configuration context
+before events, navigation and pushed updates. Token rotation rejects old sessions
+and invalidates outstanding runtime approvals; restart with the new token to resume
+runtime execution. Neither a stale session nor a surviving preview grants new
+permission after rotation. An autonomous instance cannot become a manual board by
+hot reload: restart explicitly in the selected mode.
+
+Runtime board execution requires Linux-compatible `setsid` and `kill`. A supervised
+process owner launches app-server and hook subprocesses in separate Unix sessions,
+records the actual process-group identity before returning, and sends KILL to that
+group on stop, worker death or orderly shutdown. Stop returns a stopping receipt;
+the board records stopped only after process termination has been requested
+successfully and the worker task has been terminated. Normal exit drains final
+stdout before reporting completion. No automatic restart of the external work occurs.
+
+This is process lifecycle containment, not an adversarial security sandbox. Processes
+that deliberately daemonize into another session, host/VM SIGKILL, same-user access
+to host files/process metadata, and already-issued remote effects are outside this
+guarantee. Live deployments must use appropriate OS/container isolation and reviewed
+hooks; do not treat environment scrubbing as credential isolation from arbitrary
+host-level code. No such live deployment was performed here.

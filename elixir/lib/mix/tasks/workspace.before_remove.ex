@@ -131,7 +131,7 @@ defmodule Mix.Tasks.Workspace.BeforeRemove do
         {:error, {:enoent, ""}}
 
       path ->
-        case System.cmd(path, args, stderr_to_stdout: true) do
+        case System.cmd(path, args, stderr_to_stdout: true, env: SymphonyElixir.ChildEnvironment.system_env()) do
           {output, 0} -> {:ok, output}
           {output, status} -> {:error, {status, output}}
         end

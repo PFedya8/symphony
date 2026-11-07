@@ -295,7 +295,7 @@ defmodule SymphonyElixir.GitLab.Client do
 
   defp settings(tracker_settings) when is_map(tracker_settings) do
     provider = provider_settings(tracker_settings)
-    api_url = provider["api_url"] || @default_api_url
+    api_url = resolve_setting(provider["api_url"], System.get_env("GITLAB_API_URL") || @default_api_url)
     project_path = resolve_setting(provider["project_path"], System.get_env("GITLAB_PROJECT_PATH"))
 
     api_key = resolve_setting(provider["api_key"], System.get_env("GITLAB_PAT"))

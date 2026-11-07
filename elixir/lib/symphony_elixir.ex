@@ -38,6 +38,7 @@ defmodule SymphonyElixir.Application do
     children = [
       {Phoenix.PubSub, name: SymphonyElixir.PubSub},
       SymphonyElixir.WorkflowStore,
+      SymphonyElixir.LocalProcesses,
       SymphonyElixir.AgentRuntimeSupervisor,
       SymphonyElixir.HttpServer,
       if(Application.get_env(:symphony_elixir, :demo), do: nil, else: SymphonyElixir.StatusDashboard)

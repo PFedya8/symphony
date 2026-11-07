@@ -20,7 +20,7 @@ No competing scheduler, live provider write or deployment was added.
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 340 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 354 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
 | Python CLI regression suite | 19 tests passed, including local HTTP argument checks and board command payloads |
@@ -203,3 +203,19 @@ No live GitLab account, real Codex account, production repository checkout or pu
 endpoint was used. Required live configuration and remaining integration gaps are
 listed in the operator guide. The Go compatibility boundary is documented in
 [BOARD_API_CONTRACT.md](BOARD_API_CONTRACT.md); this PR does not implement Go support.
+
+## Independent safety-review remediation
+
+Synthetic regressions cover actual child environments (including post-login-profile
+unset), token aliases, SSH clients, and rejection of child-derived empty credentials
+by the board auth boundary while the real synthetic operator token still works.
+Real external worker/background-child and checkout-hook tests verify delayed writes
+do not happen after stop or orderly shutdown. The process owner also covers worker
+death, supervisor shutdown, partial stdout, and failed startup handshake. Hot reload
+from autonomous mode to board mode never dispatches a new issue without restart.
+Existing sessions lose preview/comment/navigation/update access after token or
+configuration changes, and stored approvals are cleared. GitLab API URL environment
+resolution is tested using the exact form shipped in the workflow example.
+
+These are local synthetic checks, not hostile-process containment or live provider
+validation. The guide documents process-group and host-isolation limitations.

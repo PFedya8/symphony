@@ -42,3 +42,12 @@ advertise its supported mode. It does not imply Go has runtime support.
 Contract changes should be coordinated through PR review before another runtime
 implements this mode. Synthetic tests exercise actual Elixir orchestration;
 no live GitLab/Codex interoperability is asserted by this document.
+
+Security/lifecycle update: established LiveView sessions revalidate token and
+runtime configuration context on every event/navigation/update. Rotation clears
+runtime approvals and requires restart. Hot reload cannot switch an existing
+autonomous scheduler into board mode and dispatch without consent. Operator control
+tokens and exact-value aliases are scrubbed from child environments. Local board
+workers/hooks use owned Unix process groups; stop receipts describe `stopping`,
+with `stopped` projected after synchronous cleanup. See the guide for the explicit
+process-group and OS-isolation limitations.

@@ -12,7 +12,14 @@ defmodule SymphonyElixirWeb.TasksLive do
     if byte_size(token) >= 32 and session["demo_auth"] == SymphonyElixirWeb.DemoAuth.digest(token) do
       if connected?(socket), do: Phoenix.PubSub.subscribe(SymphonyElixir.PubSub, "demo")
       socket = assign(socket, error: nil, approval: nil, task_id: "fixture-1", detail: false, project: nil)
-      socket = assign(socket, expanded: false, embed_url: nil)
+      socket = assign(socket, expanded: false, embed_url: nil, auth_digest: session["demo_auth"], auth_context: auth_context())
+
+      socket =
+        socket
+        |> attach_hook(:authorize_events, :handle_event, fn _, _, socket -> authorize(socket) end)
+        |> attach_hook(:authorize_updates, :handle_info, fn _, socket -> authorize(socket) end)
+        |> attach_hook(:authorize_navigation, :handle_params, fn _, _, socket -> authorize(socket) end)
+
       {:ok, refresh(socket)}
     else
       {:ok, redirect(socket, to: "/")}
@@ -118,6 +125,24 @@ defmodule SymphonyElixirWeb.TasksLive do
       end
 
     {:noreply, refresh(socket)}
+  end
+
+  defp auth_context do
+    if Application.get_env(:symphony_elixir, :demo, false) do
+      :fixture
+    else
+      SymphonyElixir.Config.settings!() |> SymphonyElixir.RuntimeBoard.configuration_fingerprint()
+    end
+  end
+
+  defp authorize(socket) do
+    token = SymphonyElixirWeb.DemoAuth.token() || ""
+
+    if byte_size(token) >= 32 and socket.assigns.auth_digest == SymphonyElixirWeb.DemoAuth.digest(token) and socket.assigns.auth_context == auth_context() do
+      {:cont, socket}
+    else
+      {:halt, socket |> assign(approval: nil, embed_url: nil) |> redirect(to: "/")}
+    end
   end
 
   defp refresh(socket) do

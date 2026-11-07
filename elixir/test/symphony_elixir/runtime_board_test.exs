@@ -158,6 +158,39 @@ defmodule SymphonyElixir.RuntimeBoardTest do
     assert File.read!(marker) == "x"
   end
 
+  test "actual worker and workspace hook cannot inherit operator authorization", %{root: root, config: config} do
+    names = ~w(SYMPHONY_DEMO_TOKEN CLI_TOKEN_ALIAS BOARD_TOKEN_ALIAS)
+    previous = Map.new(names, &{&1, System.get_env(&1)})
+    on_exit(fn -> Enum.each(previous, fn {name, value} -> restore_env(name, value) end) end)
+    System.put_env("SYMPHONY_DEMO_TOKEN", String.duplicate("synthetic-demo-only", 3))
+    System.put_env("CLI_TOKEN_ALIAS", System.fetch_env!("SYMPHONY_DEMO_TOKEN"))
+    System.put_env("BOARD_TOKEN_ALIAS", System.fetch_env!("SYMPHONY_BOARD_TOKEN"))
+    probe = ~s(printf '%s\\n' "$SYMPHONY_BOARD_TOKEN" "$SYMPHONY_DEMO_TOKEN" "$CLI_TOKEN_ALIAS" "$BOARD_TOKEN_ALIAS")
+    binary = Path.join(root, "fake-codex")
+    worker_trace = Path.join(root, "worker-auth")
+    hook_trace = Path.join(root, "hook-auth")
+    File.write!(binary, String.replace(File.read!(binary), "#!/bin/sh", "#!/bin/sh\n" <> probe <> " > '#{worker_trace}'"))
+    write_config(Map.put(config, "hooks", %{"after_create" => probe <> " > '#{hook_trace}'"}))
+    start_runtime()
+    {:ok, approval} = command("preview")
+    assert {:ok, _} = command("start", %{"approval" => approval["id"]})
+    eventually(fn -> Enum.any?(snapshot()["runs"], &(&1["state"] == "succeeded")) end)
+
+    for trace <- [worker_trace, hook_trace] do
+      assert File.read!(trace) == String.duplicate("\n", 4)
+
+      for inherited <- String.split(File.read!(trace), "\n", trim: false) do
+        conn = Plug.Test.conn(:get, "/api/v1/tasks") |> Plug.Test.init_test_session(%{}) |> Plug.Conn.put_req_header("authorization", "Bearer " <> inherited)
+        denied = SymphonyElixirWeb.DemoAuth.call(conn, [])
+        assert denied.status == 401
+        refute Map.has_key?(denied.assigns, :demo_actor)
+      end
+    end
+
+    operator = Plug.Test.conn(:get, "/api/v1/tasks") |> Plug.Test.init_test_session(%{}) |> Plug.Conn.put_req_header("authorization", "Bearer " <> System.fetch_env!("SYMPHONY_BOARD_TOKEN"))
+    assert SymphonyElixirWeb.DemoAuth.call(operator, []).assigns.demo_actor == "board-operator"
+  end
+
   test "fresh tracker changes invalidate preview and unavailable provider never launches", %{marker: marker} do
     start_runtime()
     assert {:ok, _} = command("hold")
@@ -185,6 +218,109 @@ defmodule SymphonyElixir.RuntimeBoardTest do
     start_runtime()
     assert snapshot()["task"]["hold"]
     assert File.read!(marker) == "x"
+  end
+
+  test "stop and shutdown kill external workers and their delayed background children", %{root: root} do
+    binary = Path.join(root, "fake-codex")
+    late = Path.join(root, "unauthorized-late-write")
+    File.write!(binary, String.replace(File.read!(binary), "sleep 0.3", "(sleep 0.7; printf late >> '#{late}') &\n       sleep 5"))
+    start_runtime()
+    {:ok, preview} = command("preview")
+    {:ok, run} = command("start", %{"approval" => preview["id"]})
+    eventually(fn -> Enum.any?(snapshot()["runs"], &(&1["observation"]["event"] == "session_started")) end)
+    assert {:ok, _} = command("stop", %{"run_id" => run["id"]})
+    Process.sleep(850)
+    refute File.exists?(late)
+    assert :sys.get_state(SymphonyElixir.LocalProcesses).ports == %{}
+    assert {:ok, _} = command("release-hold")
+    {:ok, preview} = command("preview")
+    assert {:ok, _} = command("retry", %{"run_id" => run["id"], "approval" => preview["id"]})
+    eventually(fn -> map_size(:sys.get_state(SymphonyElixir.LocalProcesses).ports) == 1 end)
+    :ok = stop_supervised(AgentRuntimeSupervisor)
+    Process.sleep(850)
+    refute File.exists?(late)
+    assert :sys.get_state(SymphonyElixir.LocalProcesses).ports == %{}
+  end
+
+  test "stop kills an in-flight checkout hook before it can write later", %{root: root, config: config, marker: marker} do
+    late = Path.join(root, "late-hook-write")
+    hooks = %{"after_create" => "(sleep 0.7; printf late > '#{late}') & sleep 5"}
+    write_config(Map.put(config, "hooks", hooks))
+    start_runtime()
+    {:ok, preview} = command("preview")
+    {:ok, run} = command("start", %{"approval" => preview["id"]})
+    eventually(fn -> map_size(:sys.get_state(SymphonyElixir.LocalProcesses).ports) == 1 end)
+    assert {:ok, _} = command("stop", %{"run_id" => run["id"]})
+    Process.sleep(850)
+    refute File.exists?(late)
+    refute File.exists?(marker)
+    assert :sys.get_state(SymphonyElixir.LocalProcesses).ports == %{}
+  end
+
+  test "worker process containment stays enabled when configuration disables the board", %{config: config} do
+    Process.put(:symphony_managed_processes, true)
+    write_config(put_in(config, ["board", "enabled"], false))
+    {:ok, workspace} = Workspace.create_for_issue(issue("1"))
+    {:ok, session} = AppServer.start_session(workspace)
+    assert Map.has_key?(:sys.get_state(SymphonyElixir.LocalProcesses).ports, session.port)
+    assert :ok = AppServer.stop_session(session)
+    assert :sys.get_state(SymphonyElixir.LocalProcesses).ports == %{}
+  end
+
+  test "enabling board by hot reload cannot launch an unapproved source issue", %{config: config, marker: marker} do
+    Agent.update(BoardProvider, fn _ -> [] end)
+    write_config(put_in(config, ["board", "enabled"], false))
+    opts = [name: BoardRuntime, orchestrator_name: BoardOwner, task_supervisor_name: BoardWorkers]
+    start_supervised!({AgentRuntimeSupervisor, opts})
+    assert :sys.get_state(BoardOwner).board == nil
+    write_config(config)
+    Agent.update(BoardProvider, fn _ -> [issue("1")] end)
+    send(BoardOwner, :tick)
+    Process.sleep(200)
+    assert :sys.get_state(BoardOwner).running == %{}
+    refute File.exists?(marker)
+  end
+
+  test "token rotation revokes connected sessions and outstanding approvals" do
+    Process.flag(:trap_exit, true)
+    start_runtime()
+    start_supervised!({HttpServer, port: 0, host: "127.0.0.1"})
+    token = System.fetch_env!("SYMPHONY_BOARD_TOKEN")
+    conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
+    {:ok, first, _} = live(conn, "/tasks?task=1")
+    {:ok, second, _} = live(conn, "/tasks?task=1")
+    {:ok, _preview} = command("preview")
+    System.put_env("SYMPHONY_BOARD_TOKEN", String.duplicate("rotated-synthetic-only", 3))
+    assert {:error, {:redirect, %{to: "/"}}} = render_click(first, "preview", %{"revision" => "1"})
+    send(second.pid, :demo_updated)
+    assert_redirect(second, "/")
+    assert snapshot()["task"]["comments"] == []
+    assert :sys.get_state(BoardOwner).board.data["approvals"] == %{}
+    assert {:error, "runtime_scope_changed"} = command("preview")
+  end
+
+  test "rotated connected session cannot persist a comment" do
+    Process.flag(:trap_exit, true)
+    start_runtime()
+    start_supervised!({HttpServer, port: 0, host: "127.0.0.1"})
+    token = System.fetch_env!("SYMPHONY_BOARD_TOKEN")
+    conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
+    {:ok, view, _} = live(conn, "/tasks?task=1")
+    System.put_env("SYMPHONY_BOARD_TOKEN", String.duplicate("rotated-synthetic-only", 3))
+    assert {:error, {:redirect, %{to: "/"}}} = render_click(view, "comment", %{"text" => "must not persist", "revision" => "1"})
+    assert snapshot()["task"]["comments"] == []
+  end
+
+  test "workflow changes revoke a connected session before mutation", %{config: config} do
+    Process.flag(:trap_exit, true)
+    start_runtime()
+    start_supervised!({HttpServer, port: 0, host: "127.0.0.1"})
+    token = System.fetch_env!("SYMPHONY_BOARD_TOKEN")
+    conn = Plug.Conn.put_req_header(build_conn(), "authorization", "Basic " <> Base.encode64("demo:" <> token))
+    {:ok, view, _} = live(conn, "/tasks?task=1")
+    write_config(put_in(config, ["agent", "max_turns"], 2))
+    assert {:error, {:redirect, %{to: "/"}}} = render_click(view, "comment", %{"text" => "must not persist", "revision" => "1"})
+    assert snapshot()["task"]["comments"] == []
   end
 
   test "configuration changes fence dispatch and databases cannot cross projects", %{config: config} do
@@ -239,6 +375,10 @@ defmodule SymphonyElixir.RuntimeBoardTest do
 
   test "configuration and authentication fail closed without touching another scope", %{config: config} do
     settings = Config.settings!()
+    previous_path = System.get_env("PATH")
+    System.put_env("PATH", "/nonexistent-synthetic-path")
+    assert_raise RuntimeError, ~r/requires setsid and kill/, fn -> RuntimeBoard.open(settings, []) end
+    restore_env("PATH", previous_path)
     assert_raise RuntimeError, ~r/requires GitLab/, fn -> RuntimeBoard.open(%{settings | tracker: %{settings.tracker | kind: "memory"}}, []) end
     assert_raise RuntimeError, ~r/loopback/, fn -> RuntimeBoard.open(%{settings | server: %{settings.server | host: "0.0.0.0"}}, []) end
     assert_raise RuntimeError, ~r/local worker/, fn -> RuntimeBoard.open(%{settings | worker: %{settings.worker | ssh_hosts: ["remote"]}}, []) end

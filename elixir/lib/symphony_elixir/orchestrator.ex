@@ -64,7 +64,12 @@ defmodule SymphonyElixir.Orchestrator do
 
   @impl true
   def terminate(_reason, {:demo, state}), do: Exqlite.Sqlite3.close(state.db)
-  def terminate(_reason, %{board: %{db: db}}), do: Exqlite.Sqlite3.close(db)
+
+  def terminate(_reason, %{board: %{db: db}} = state) do
+    Enum.each(state.running, fn {_, entry} -> stop_running_task(entry.pid, entry.ref, state.task_supervisor) end)
+    Exqlite.Sqlite3.close(db)
+  end
+
   def terminate(_reason, _state), do: :ok
 
   defp init_tracker(opts) do
@@ -756,6 +761,8 @@ defmodule SymphonyElixir.Orchestrator do
   defp codex_message_method(_message), do: nil
 
   defp terminate_task(pid, task_supervisor) when is_pid(pid) do
+    SymphonyElixir.LocalProcesses.stop_owner(pid)
+
     case Task.Supervisor.terminate_child(task_supervisor, pid) do
       :ok ->
         :ok
@@ -854,7 +861,7 @@ defmodule SymphonyElixir.Orchestrator do
          active_states,
          terminal_states
        ) do
-    RuntimeBoard.authorized_issue?(state.board, issue) and
+    board_scope_check(state) == :ok and RuntimeBoard.authorized_issue?(state.board, issue) and
       candidate_issue?(issue, active_states, terminal_states) and
       !MapSet.member?(claimed, issue.id) and
       !Map.has_key?(running, issue.id) and
@@ -993,6 +1000,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp spawn_issue_on_worker_host(%State{} = state, issue, attempt, recipient, worker_host) do
     case Task.Supervisor.start_child(state.task_supervisor, fn ->
+           Process.put(:symphony_managed_processes, not is_nil(state.board))
            AgentRunner.run(issue, recipient, attempt: attempt, worker_host: worker_host)
          end) do
       {:ok, pid} ->
@@ -1435,7 +1443,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp board_poll_states(%{board: nil}), do: Config.settings!().tracker.active_states
   defp board_poll_states(_), do: Config.settings!().tracker.active_states ++ Config.settings!().tracker.terminal_states
-  defp board_scope_check(%{board: nil}), do: :ok
+  defp board_scope_check(%{board: nil}), do: if(Config.settings!().board.enabled, do: {:error, :runtime_scope_changed}, else: :ok)
   defp board_scope_check(%{board: board}), do: if(RuntimeBoard.current?(board), do: :ok, else: {:error, :runtime_scope_changed})
   defp fence_board(%{board: nil} = state), do: state
 
@@ -1443,6 +1451,8 @@ defmodule SymphonyElixir.Orchestrator do
     if RuntimeBoard.current?(state.board) do
       state
     else
+      state = %{state | board: RuntimeBoard.invalidate(state.board)}
+
       Enum.reduce(state.running, state, fn {id, entry}, acc ->
         stop_and_block_issue(acc, id, entry, "runtime configuration invalid or changed")
       end)

@@ -11,6 +11,7 @@ defmodule SymphonyElixir.RuntimeBoard do
     if config.tracker.kind != "gitlab" or config.agent.max_concurrent_agents != 1,
       do: raise("Runtime board requires GitLab and agent.max_concurrent_agents=1")
 
+    require_process_tools!()
     if config.worker.ssh_hosts != [], do: raise("Runtime board currently requires local worker execution")
     if byte_size(System.get_env("SYMPHONY_BOARD_TOKEN") || "") < 32, do: raise("Runtime board token must contain at least 32 bytes")
     if config.server.host not in ["127.0.0.1", "localhost", "::1"], do: raise("Runtime board must bind to loopback")
@@ -27,6 +28,11 @@ defmodule SymphonyElixir.RuntimeBoard do
         Exqlite.Sqlite3.close(board.db)
         reraise error, __STACKTRACE__
     end
+  end
+
+  defp require_process_tools! do
+    if is_nil(System.find_executable("setsid")) or is_nil(System.find_executable("kill")),
+      do: raise("Runtime board requires setsid and kill for local process ownership")
   end
 
   @spec scope_fingerprint(map()) :: String.t()
@@ -73,7 +79,8 @@ defmodule SymphonyElixir.RuntimeBoard do
     File.chmod!(root, 0o700)
   end
 
-  defp configuration_fingerprint(config) do
+  @spec configuration_fingerprint(map()) :: String.t()
+  def configuration_fingerprint(config) do
     scope = Map.take(Map.from_struct(config), [:tracker, :workspace, :worker, :agent, :codex, :hooks, :board])
 
     provider_env =
@@ -84,7 +91,9 @@ defmodule SymphonyElixir.RuntimeBoard do
       |> Enum.sort()
 
     fallback = Enum.map(~w(GITLAB_PROJECT_PATH GITLAB_API_URL GITLAB_PAT), &System.get_env/1)
-    :crypto.hash(:sha256, :erlang.term_to_binary({scope, provider_env, fallback, Path.expand(Workflow.workflow_file_path()), Config.workflow_prompt()})) |> Base.encode16()
+
+    :crypto.hash(:sha256, :erlang.term_to_binary({scope, provider_env, fallback, System.get_env("SYMPHONY_BOARD_TOKEN"), Path.expand(Workflow.workflow_file_path()), Config.workflow_prompt()}))
+    |> Base.encode16()
   end
 
   @spec current?(map()) :: boolean()
@@ -95,6 +104,9 @@ defmodule SymphonyElixir.RuntimeBoard do
       _ -> false
     end
   end
+
+  @spec invalidate(map()) :: map()
+  def invalidate(board), do: save(board, Map.put(board.data, "approvals", %{}))
 
   @spec ingest(map(), list()) :: map()
   def ingest(board, issues) do
