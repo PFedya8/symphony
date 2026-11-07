@@ -1,7 +1,7 @@
 # Multi-task board verification — 2026-11-07 UTC
 
-Branch: `test/manual-demo-preview` (PR #2), extending the previously tested manual
-fixture. Runtime: Elixir 1.19.5 / OTP 28.5.0.6 in the same official Elixir container
+Branch: `feat/manual-task-board`, following the previously tested manual
+fixture in merged PR #2. The board commit is not part of that earlier merge. Runtime: Elixir 1.19.5 / OTP 28.5.0.6 in the same official Elixir container
 used for earlier checks. Native Chromium + Playwright exercised the UI through a
 loopback-only relay; there was no public endpoint.
 
