@@ -18,6 +18,20 @@ defmodule SymphonyElixir.RuntimeBoardTest do
     end
   end
 
+  setup_all do
+    # These tests own BoardRuntime. A global scheduler restart must never adopt
+    # their temporarily installed workflow and acquire the same SQLite database.
+    :ok = Supervisor.terminate_child(SymphonyElixir.Supervisor, AgentRuntimeSupervisor)
+
+    on_exit(fn ->
+      Workflow.set_workflow_file_path(Path.expand("../fixtures/startup_workflow.md", __DIR__))
+      :ok = WorkflowStore.force_reload()
+      {:ok, _} = Supervisor.restart_child(SymphonyElixir.Supervisor, AgentRuntimeSupervisor)
+    end)
+
+    :ok
+  end
+
   setup do
     previous_execution = Application.get_env(:symphony_elixir, :synthetic_board_execution)
     Application.put_env(:symphony_elixir, :synthetic_board_execution, true)
@@ -432,6 +446,20 @@ defmodule SymphonyElixir.RuntimeBoardTest do
     assert hd(snapshot()["runs"])["state"] == "blocked"
     assert :sys.get_state(BoardOwner).retry_attempts == %{}
     assert File.read!(marker) == "x"
+  end
+
+  test "fallback GitLab project binding is immutable without opening board storage", %{config: config} do
+    assert Process.whereis(Orchestrator) == nil
+    previous = System.get_env("GITLAB_PROJECT_PATH")
+    on_exit(fn -> restore_env("GITLAB_PROJECT_PATH", previous) end)
+    System.put_env("GITLAB_PROJECT_PATH", "synthetic/fallback")
+    write_config(update_in(config, ["tracker", "provider"], &Map.delete(&1, "project_path")))
+    binding = Tracker.bind_agent_tools()
+    assert binding.board_policy == {:gitlab_read_only, "synthetic/fallback"}
+    assert binding.tracker_settings.project_path == "synthetic/fallback"
+    System.put_env("GITLAB_PROJECT_PATH", "synthetic/rotated")
+    args = %{"method" => "GET", "path" => "/projects/synthetic%2Ffallback/issues"}
+    refute Tracker.execute_bound_agent_tool(binding, "gitlab_api", args, gitlab_client: fn _, _, _, _, _ -> flunk("stale fallback reached transport") end)["success"]
   end
 
   test "bound GitLab tools pin credentials and destination across rotation races", %{config: config} do

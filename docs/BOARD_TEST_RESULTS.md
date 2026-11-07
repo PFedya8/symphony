@@ -29,7 +29,7 @@ No competing scheduler, live provider write or deployment was added.
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 360 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 364 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
 | Python CLI regression suite | 19 tests passed, including local HTTP argument checks and board command payloads |
@@ -252,3 +252,30 @@ check but before Client request construction: only the original bound endpoint,
 project and credential reach injected transport. Literal `$`-prefixed secrets stay
 literal, custom secret environment names remain scrubbed and inspected bindings redact
 credentials. Invalid configuration/binding fails closed. No live provider was contacted.
+
+## Integration with main and coverage failure investigation
+
+Merged `main` at `adef36b4879d5c1730887f08f9a7573ac7005db7` into the PR branch,
+without merging the PR to main. Resolved conflicts in `.gitignore`, the root and
+Elixir READMEs, `SPEC.md`, `elixir/WORKFLOW.md`, and `Demo.execute/3`. Preserved the
+Go implementation, benchmarks, CI workflow, shared CLI and all Elixir board/safety
+work. At ordinary command capacity, both boards retain bounded effective holds
+and active-run stop. The Elixir reserve is task-scoped, retains receipts and rejects
+cross-task stops, no-op safety actions, releases and new task creation.
+
+The earlier GitHub `make-all` run 42367198610 failed a test with `database is locked`;
+its 99.93% total was a downstream symptom. Tracker's fallback project branch
+(`environment["GITLAB_PROJECT_PATH"]`) was skipped when the test aborted. Runtime
+board tests now suspend the application's default scheduler while owning their own
+runtime, then restore the memory-backed startup fixture. A separate storage-free
+binding test covers fallback resolution and rejects stale fallback transport.
+The full suite with the exact failing CI seed 505653 passed: 364 tests, zero
+failures, six live skips and 100% measured coverage. No threshold or exclusion changed.
+CI now prints missed source lines when coverage fails.
+
+Combined local validation: Go 1.25.14 formatting/vet/build and race tests passed
+(90.2% Go statement coverage), both CLI suites passed (8 + 19 tests), and the real
+shared CLI-to-Go HTTP/SQLite board contract passed, including missing-artifact
+receipt replay. The final Elixir `make all` covers the existing token, immutable
+provider scope, production execution gate and containment-characterization tests.
+GitHub check results for the exact pushed merge head are recorded on PR #5.

@@ -2348,3 +2348,10 @@ The optional board must fail closed for new execution when external-process
 containment is unverified. Unix process groups alone do not establish that boundary.
 Provider tool bindings must pin resolved endpoint/project/credentials and reject
 stale configuration generations; an in-flight race must not adopt a new scope.
+
+Manual fixture command capacity must not disable effective hold or active-run
+stop. After 1,000 accepted commands, only these monotone safety transitions may
+add records (at most one hold per existing task plus one globally active stop). Existing idempotency results must
+remain replayable; new no-op commands, release and dispatch remain blocked.
+Safety actions preserve scope/revision checks, durable commit-before-effect, and
+the existing bounded audit-history policy.

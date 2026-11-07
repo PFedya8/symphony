@@ -1,0 +1,117 @@
+Verified 2026-11-06 in the managed Linux environment.
+Baseline: c1aa579de8bf726a31cbabbaddfe1cb4fd52e4b0
+
+Go 1.25.4 linux/amd64:
+  go test -race -cover ./...
+  PASS: 11 top-level tests; 82.3% statement coverage; no race reports.
+  go vet ./...
+  PASS.
+  gofmt / git diff --check
+  PASS.
+
+Elixir 1.19.4 / Erlang OTP 28.3, ERL_FLAGS='+S 2:2':
+  make all
+  PASS: setup, build, format, specs.check, Credo, coverage, Dialyzer.
+  Full suite: 310 tests, 0 failures, 6 skipped.
+  Configured coverage total: 100.00% (repository excludes selected modules).
+  Dialyzer: 0 errors, 0 skipped.
+  Live provider tests remained skipped; no live credentials or accounts connected.
+
+Shared contract:
+  python3 bench/contract.py
+  Go: PASS.
+  Elixir: PASS.
+  Auth, capabilities, approval, hold, duplicate-key replay/conflict, stale revision,
+  capacity, stop, retry lineage, simulation evidence, events, existing CLI.
+
+Browser:
+  Chromium 156.0.8078.79 / Playwright 1.62.1
+  node bench/ui-check.cjs
+  PASS: connect, preview, start, stop/hold, release, retry, success, phone width.
+  No page errors; four actual screenshots are adjacent to this file.
+
+Boundary:
+  No real Codex child, GitLab live API, Google Calendar/Tasks, production deployment,
+  persistent remote hosting, browser resource benchmark, or full Go orchestrator tested.
+
+Packaging:
+  docker build -f bench/compare.Dockerfile --secret id=proxy_ca,src=<CA bundle> ...
+  PASS.
+  docker run --rm <built image> --trials 1 --idle 1 --output /tmp/comparison-smoke.json
+  PASS: both Go and Elixir phases plus CLI completed.
+  This packaging smoke run is separate from bench/comparison.json's three-trial data.
+
+Capacity-safety follow-up (see CAPACITY_FIX.md):
+  Confirmed final-slot start blocked hold in both original implementations.
+  Go: 13 tests passed with -race; 82.9% coverage; vet and build passed.
+  Elixir make all: 312 tests, 0 failures, 6 skipped; configured coverage 100%;
+  formatting, specs, Credo and Dialyzer passed.
+  Added Go pull-request CI workflow; hosted execution is separately verified.
+
+Startup-error follow-up:
+  Reproduced occupied-port false readiness and status 0 before the fix.
+  Real-main subprocess regressions now verify nonzero occupied-port failure,
+  actual bound-port readiness, authenticated API access, and clean SIGTERM exit.
+  Full Go race suite passed; 89.8% statement coverage; vet/build/format passed.
+  Elixir and UI unchanged; resource benchmark not rerun.
+
+Shared CLI identifier follow-up:
+  Deterministically reproduced 14 pre-fix parser-error subcases for generated IDs
+  beginning with one or two hyphens.
+  Six CLI regression tests passed on Python 3.11, 3.12 and 3.13, including real
+  subprocess HTTP transport; shared contract passed against Go and Elixir.
+  Full Elixir suite: 312 tests, 0 failures, 6 skipped.
+  CLI regression suite added to the Go CI workflow.
+
+PR #2 coordination:
+  Reusable CLI commit 3fd60dccb74c82449b3d8bc825cc6096cf9a778f reconciles opaque
+  IDs, global options and hyphen-prefixed approval/key values across Python 3.11+.
+  Both CLI suites (7 + 6 tests) passed on Python 3.11, 3.12 and 3.13.
+  Go race suite: passed, 90.8% coverage; vet/build passed.
+  Two-tab Chromium approval replacement/confidentiality/hold/completion passed.
+  Original start/stop/hold/retry/mobile browser flow passed; screenshots refreshed.
+  Temporary PR #2 + PR #3 Elixir merge: make all passed offline with cached deps;
+  313 tests, 0 failures, 6 skipped; configured coverage 100%; specs/Credo/Dialyzer passed.
+  Real merge still needs the documented CLI and three documentation resolutions.
+
+Final CLI policy reconciliation with PR #2 b1050cb:
+  Supersedes the earlier 3fd60dc no-abbreviation policy and CLI merge resolution.
+  cli/symphonyctl and scripts/test_symphonyctl.py exactly match PR #2 b1050cb.
+  Both current suites: 8 + 10 tests passed on Python 3.11, 3.12 and 3.13.
+  Temporary merge: CLI merged unchanged; only three documentation conflicts.
+  Merged Go race suite passed, 90.8% coverage; vet/build passed.
+  Merged Elixir make all passed with cached dependencies (HEX_OFFLINE=1):
+  313 tests, zero failures, six skipped; configured coverage 100%;
+  formatting, specs, Credo and Dialyzer passed. No merge published.
+  Browser code unchanged in this follow-up; screenshots and benchmark not rerun.
+
+Go board extension aligned with PR #4 fb96c957:
+  Shared CLI and PR4 regression suite match fb96c957 byte-for-byte.
+  Both CLI suites: 8 + 19 tests passed on Python 3.12 and 3.13.
+  Go full race suite passed: 90.1% statement coverage; vet/build/format passed.
+  New board tests cover task/approval/run isolation, bounds, legacy migration,
+  interrupted recovery, import receipt replay and emergency holds at capacity.
+  Synthetic TLS GitLab tests cover scope, response limits, redirect rejection,
+  errors, refresh/persistence, credential rotation, fixture/discovery isolation,
+  and explicit rejection of imported-task execution.
+  Real shared CLI -> HTTP -> SQLite board contract passed, including authored
+  content, second project label/filter and offline artifact receipt recovery.
+  Three real Chromium suites passed on fresh databases: board editing/content,
+  stale drafts and safe rendering/mobile; stop/hold/retry; two-tab private approvals.
+  Eleven current screenshots saved in docs/go-evidence/board; desktop/mobile
+  screenshots visually inspected. Historical screenshot files preserved.
+  Empty discovery board rendering tested with a synthetic browser response.
+  No live provider, real Codex worker, external video playback or public deployment
+  tested. No resource benchmark rerun. Existing comparison.json SHA256 unchanged:
+  aa1973ec4f5c06fb42c27f6cfb1db1eeb681fb82be8ffb19a8f5893ccfd5d949.
+  The earlier merged Elixir 313-test result above is historical (PR2 pair), not
+  a claim that the new PR4 board has been merged/tested with this branch.
+
+GitLab review fixes after befced82:
+  Reproduced reopened source remaining Done and acceptance of bare query/fragment
+  delimiters before fix. Added close/reopen, local stage, metadata-only refresh,
+  unchanged poll, revision and restart regressions plus six delimiter subcases.
+  Source status transitions now set Done/Todo; metadata-only changes preserve
+  local stages. Bare/nonempty query and fragment delimiters reject at construction.
+  Full Go race suite passed: 90.2% coverage; vet/build passed.
+  UI/CLI unchanged; screenshots and benchmark not rerun. No live provider used.

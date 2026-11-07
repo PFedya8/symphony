@@ -1,0 +1,10 @@
+.git
+elixir/_build
+elixir/deps
+elixir/cover
+elixir/bin
+elixir/log
+elixir/logs
+bench/go-manual
+**/__pycache__
+docs/go-evidence/*.png

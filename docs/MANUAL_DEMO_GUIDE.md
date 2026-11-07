@@ -154,7 +154,10 @@ private backup. Old binaries reject version 4; rollback requires the old backup.
 Do not restore or copy over a live database. Unknown versions fail closed.
 
 Limits: 100 tasks, 20 checklist steps (160 bytes each), 10 links per task, three
-runs per task, one worker globally and 1,000 recorded commands/events. Titles are
+runs per task, one worker globally and 1,000 ordinary command receipts. After
+capacity, one effective hold per existing task and one active-run stop remain
+available (at most 101 extra receipts); release, new tasks and dispatch stay blocked.
+Receipts are retained for replay; the audit keeps its latest 1,000 events. Titles are
 limited to 160 bytes, project labels to 80, descriptions/plans to 4,000 and HTTPS
 URLs to 2,000. A full command history refuses further mutations; start a fresh
 private database for a new demonstration rather than deleting live state.

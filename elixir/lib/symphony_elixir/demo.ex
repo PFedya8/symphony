@@ -122,8 +122,9 @@ defmodule SymphonyElixir.Demo do
     task = task!(state.data, task_id)
     revision = if req["op"] == "create", do: state.data["board_revision"], else: task["revision"]
     require!(req["revision"] == revision, "stale_revision")
-    require!(map_size(state.data["commands"]) < 1000, "demo_history_full")
-    {result, data, effect} = transition(req, Map.put(state.data, "task", task))
+    scoped = Map.put(state.data, "task", task)
+    require!(map_size(state.data["commands"]) < 1000 or emergency?(req, scoped), "demo_history_full")
+    {result, data, effect} = transition(req, scoped)
     data = put_in(data["commands"][req["key"]], %{"fingerprint" => fingerprint, "result" => result, "import_identity" => import_identity(req)})
     before_revision = if req["op"] == "create", do: nil, else: task["revision"]
     data = audit(data, req["op"], req["actor"] || "operator", before_revision, result)
@@ -133,6 +134,17 @@ defmodule SymphonyElixir.Demo do
     publish()
     {{:ok, result}, state}
   end
+
+  # After capacity, only monotone safety changes can add records: at most one
+  # hold per existing task and one globally active stop. Replay, scope and revision
+  # checks still precede this gate; no new tasks or releases can extend the reserve.
+  defp emergency?(%{"op" => "hold"}, data), do: not data["task"]["hold"]
+
+  defp emergency?(%{"op" => "stop"} = req, data) do
+    Enum.any?(data["runs"], &(&1["id"] == req["run_id"] and &1["task_id"] == data["task"]["id"] and &1["state"] in ~w(authorized starting running)))
+  end
+
+  defp emergency?(_, _), do: false
 
   defp transition(%{"op" => "preview"}, data) do
     eligible!(data)

@@ -61,7 +61,7 @@ The board also supports immutable nested Plan/Acceptance Criteria/Validation
 updates, threaded comments, opt-in Vimeo/YouTube walkthroughs and explicit CLI
 imports of reviewed agent artifacts, existing local runtime observations and
 GitHub PR API evidence. Imports retain provenance and do not claim a verified
-merge or change execution state. See the manual demo guide for schema-3 backup,
+merge or change execution state. See the manual demo guide for schema-4 backup,
 provider boundaries, CLI commands and the remaining video-parity gaps.
 
 The [opt-in GitLab runtime board](docs/MANUAL_DEMO_GUIDE.md#opt-in-gitlab-runtime-board)
@@ -72,3 +72,14 @@ provider execution and automatic PR/merge synchronization are not claimed.
 Real execution from the GitLab board is currently blocked pending verified OS
 containment. Issue discovery and review remain available; orchestration execution
 is exercised only with synthetic test fixtures. See the operator guide for details.
+
+### Go manual fixture comparison
+
+The optional [Go fixture service](go-manual/README.md) implements the manual demo
+controls with a shared HTTP backend for its UI and the existing CLI. It includes
+[reproducible resource measurements](bench/GO_COMPARISON.md), browser evidence,
+and [project/integration boundaries](docs/GO_INTEGRATIONS.md). It is not a port of
+the complete Elixir orchestrator or its external tracker integrations.
+
+Both manual fixture backends retain effective stop/hold controls when ordinary
+command history reaches capacity, with durable idempotency and bounded safety records.

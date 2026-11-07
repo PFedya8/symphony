@@ -429,13 +429,13 @@ state. `tasks create`, `move`, `plan`, `check` and `link` use the shared command
 handler with revision/idempotency checks. Tasks have separate attempt budgets;
 worker capacity remains one globally. The board is simulated and project filters
 are not tenant authorization. See the [guide](../docs/MANUAL_DEMO_GUIDE.md),
-including the version-1/version-2 to version-3 database migration and rollback instructions.
+including the version-1/version-2/version-3 to version-4 database migration and rollback instructions.
 
 The board also supports immutable nested Plan/Acceptance Criteria/Validation
 updates, threaded comments, opt-in Vimeo/YouTube walkthroughs and explicit CLI
 imports of reviewed agent artifacts, existing local runtime observations and
 GitHub PR API evidence. Imports retain provenance and do not claim a verified
-merge or change execution state. See the manual demo guide for schema-3 backup,
+merge or change execution state. See the manual demo guide for schema-4 backup,
 provider boundaries, CLI commands and the remaining video-parity gaps.
 
 ### Manually approved GitLab board
@@ -453,3 +453,9 @@ board sessions. See the guide for process-group and OS-isolation limitations.
 **Current limitation:** non-test builds reject board preview/start/retry until a
 verified OS containment boundary is implemented. Process groups alone were insufficient.
 The GitLab discovery/review UI remains usable. Never deploy synthetic test builds.
+
+At the manual demo’s 1,000-command limit, ordinary writes stop but an effective
+hold and an active-run stop remain available. These add at most one durable hold per existing task plus one active-run stop
+record (at most 101 extra records on the 100-task board), without evicting idempotency results. New no-op safety commands and
+release/start/retry remain blocked. Authentication, revisions and storage success
+are still required; the audit retains its latest 1,000 events.
