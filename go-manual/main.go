@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -96,10 +98,16 @@ func handler(s *service, token string) http.Handler {
 	})
 }
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	token := os.Getenv("SYMPHONY_DEMO_TOKEN")
 	path := os.Getenv("SYMPHONY_DEMO_DB")
 	if len(token) < 32 || path == "" {
-		log.Fatal("set SYMPHONY_DEMO_TOKEN (32+ bytes) and SYMPHONY_DEMO_DB")
+		return errors.New("set SYMPHONY_DEMO_TOKEN (32+ bytes) and SYMPHONY_DEMO_DB")
 	}
 	addr := os.Getenv("SYMPHONY_GO_ADDR")
 	if addr == "" {
@@ -107,10 +115,15 @@ func main() {
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
-		log.Fatal("listen address must be a literal loopback IP")
+		return errors.New("listen address must be a literal loopback IP")
 	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	defer listener.Close()
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	project := os.Getenv("SYMPHONY_PROJECT")
 	if project == "" {
@@ -118,15 +131,16 @@ func main() {
 	}
 	s, err := openProject(path, project)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer s.close()
 	server := &http.Server{Addr: addr, Handler: handler(s, token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	go func() { <-stop; server.Close() }()
-	log.Printf("fixture simulator listening on %s", addr)
-	if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Print(err)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	go func() { <-ctx.Done(); server.Close() }()
+	log.Printf("fixture simulator listening on %s", listener.Addr())
+	if err = server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve: %w", err)
 	}
+	return nil
 }

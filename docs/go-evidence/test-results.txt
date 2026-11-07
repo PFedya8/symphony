@@ -47,3 +47,10 @@ Capacity-safety follow-up (see CAPACITY_FIX.md):
   Elixir make all: 312 tests, 0 failures, 6 skipped; configured coverage 100%;
   formatting, specs, Credo and Dialyzer passed.
   Added Go pull-request CI workflow; hosted execution is separately verified.
+
+Startup-error follow-up:
+  Reproduced occupied-port false readiness and status 0 before the fix.
+  Real-main subprocess regressions now verify nonzero occupied-port failure,
+  actual bound-port readiness, authenticated API access, and clean SIGTERM exit.
+  Full Go race suite passed; 89.8% statement coverage; vet/build/format passed.
+  Elixir and UI unchanged; resource benchmark not rerun.

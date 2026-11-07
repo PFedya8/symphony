@@ -128,3 +128,8 @@ GitHub Actions now runs Go formatting, vet, race/coverage tests and a build on
 pull requests and pushes to main (`.github/workflows/go-manual.yml`). Browser and
 cross-runtime contract checks remain manual; branch-protection enforcement is not
 configured by this PR.
+
+Startup errors, including an occupied port, exit nonzero. The listening message
+reports the actual bound address only after initialization; SIGINT/SIGTERM are
+normal shutdowns. See [startup regression evidence](../docs/go-evidence/STARTUP_FIX.md)
+and the [reference UI gap/plan](../docs/GO_UI_GAP.md).
