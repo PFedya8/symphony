@@ -51,7 +51,7 @@ For the isolated Elixir manual fixture UI, CLI and verification steps, see the
 [manual demo guide](docs/MANUAL_DEMO_GUIDE.md). Separate demo instances can use
 distinct local ports, databases and tokens; this is not multi-tenant hosting.
 
-The Elixir fixture UI now includes a six-stage, multi-task board with project
+The Elixir fixture UI now includes a nine-stage, multi-task board with project
 filtering, task details, editable checklists, activity and user-supplied evidence
 links. Browser, CLI and API use the same durable service. Execution remains an
 explicitly labeled simulator; real tracker/agent and PR synchronization are not

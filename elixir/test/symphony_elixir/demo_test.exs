@@ -296,7 +296,7 @@ defmodule SymphonyElixir.DemoTest do
 
   test "board create, transitions, checklist and evidence survive restart" do
     assert length(snapshot()["tasks"]) == 6
-    assert snapshot()["stages"] == ["Backlog", "Todo", "In Progress", "Human Review", "Merging", "Done"]
+    assert snapshot()["stages"] == ["Backlog", "Todo", "In Progress", "Human Review", "Merging", "Done", "Rework", "Canceled", "Duplicate"]
     {:ok, task} = board_command("fixture-1", "create", %{"title" => "Second project task", "project" => "new-project"})
     id = task["id"]
     assert task["stage"] == "Backlog"
@@ -495,5 +495,26 @@ defmodule SymphonyElixir.DemoTest do
     render_submit(view, "plan", %{"text" => "Wrong task", "revision" => 1, "task_id" => "fixture-2"})
     assert has_element?(view, ".task-detail [role=alert][data-error=stale_selection]")
     assert snapshot()["task"]["revision"] == 1
+  end
+
+  test "drag moves use submitted revision and terminal states reject execution" do
+    conn = board_connection()
+    {:ok, view, _} = live(conn, "/tasks")
+    view |> render_hook("board-move", %{"task_id" => "fixture-2", "revision" => "1", "stage" => "Rework"})
+    assert has_element?(view, "[data-stage='Rework'] #card-fixture-2")
+    view |> render_hook("board-move", %{"task_id" => "fixture-2", "revision" => "1", "stage" => "Done"})
+    assert has_element?(view, "[role=alert][data-error=stale_revision]")
+    assert has_element?(view, "[data-stage='Rework'] #card-fixture-2")
+
+    for stage <- ["Canceled", "Duplicate"] do
+      assert {:ok, _} = board_command("fixture-2", "move", %{"stage" => stage})
+      assert {:error, "task_ineligible"} = board_command("fixture-2", "preview")
+    end
+
+    {:ok, detail, _} = live(conn, "/tasks?task=fixture-2")
+    detail |> element("button[phx-click=expand-detail]") |> render_click()
+    assert has_element?(detail, ".task-detail.full-page")
+    detail |> element("button[phx-click=expand-detail]") |> render_click()
+    refute has_element?(detail, ".task-detail.full-page")
   end
 end

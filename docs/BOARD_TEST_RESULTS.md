@@ -7,8 +7,8 @@ loopback-only relay; there was no public endpoint.
 
 ## Scope delivered
 
-An original six-column board (Backlog, Todo, In Progress, Human Review, Merging,
-Done), multiple tasks, project filtering, task creation and direct detail links.
+An original nine-column board (Backlog, Todo, In Progress, Human Review, Merging,
+Done, Rework, Canceled and Duplicate), multiple tasks, project filtering, task creation and direct detail links.
 Details provide manual stage transitions, editable checklists, approval/run
 controls, persisted activity and user-supplied HTTPS PR/walkthrough links.
 UI, API and CLI use the existing service and orchestrator. No competing scheduler,
@@ -19,12 +19,12 @@ real agent execution, external write or deployment was added.
 | Check | Result |
 | --- | --- |
 | Full `make all` | Passed, including format, specs, strict Credo and Dialyzer |
-| ExUnit | 320 tests, 0 failures, 6 opt-in live tests skipped |
+| ExUnit | 321 tests, 0 failures, 6 opt-in live tests skipped |
 | Measured coverage | 100% with existing repository exclusions unchanged |
 | Dialyzer | 0 errors |
 | Python CLI regression suite | 12 tests passed, including local HTTP argument checks and board command payloads |
 | HTTP/CLI/restart smoke | Passed against a fresh isolated database on port 4001 |
-| Desktop Chromium | Six columns/cards, project filter, detail navigation, start/stop/hold/retry, plan edit/check, evidence link and activity disclosure passed |
+| Desktop Chromium | Nine columns, drag/drop with persisted counts, project filter, expanded detail navigation, start/stop/hold/retry, plan edit/check, evidence link and activity disclosure passed |
 | Mobile-sized Chromium (390 × 844) | Cross-browser persisted state, board/detail views, task creation and stage move passed |
 | Concurrent Chromium clients | Stale plan rejected; draft and original revision preserved; explicit reload and reviewed save passed |
 | Mobile failure feedback | Invalid plan, invalid link and ineligible run alerts visible inside the active panel; viewport and occlusion checks passed |
@@ -76,7 +76,7 @@ persisted state, creates another task and moves it to Todo.
 
 These are browser captures, not designs or mockups. They contain only synthetic
 tasks and an explicitly supplied repository PR link. No login token appears.
-The first five captures show the initial board; the last two capture the
+The first five captures show the expanded workflow board; the last two capture the
 concurrent-edit and mobile-feedback fixes. Older single-task screenshots remain
 historical evidence in `screenshots/manual-demo`.
 
@@ -92,8 +92,8 @@ reload takes effect, and mobile errors are not obscured by the full-screen panel
 This is a functional fixture board, **not full parity with the Linear video**.
 Plans are manually maintained; the three-second worker is a fixed simulator.
 Tracker import, actual agent-generated plans, automatic PR creation/status sync,
-drag-and-drop, Calendar/Google Tasks, tenant permissions and hosted phone access
-are not implemented or verified. Column transitions use a selector. No real issue
+Calendar/Google Tasks, tenant permissions and hosted phone access
+are not implemented or verified. Column transitions use drag-and-drop or an accessible selector. No real issue
 was closed, PR merged or production release verified.
 
 Project selection is a filter under one shared operator identity. Separate
@@ -107,3 +107,24 @@ are interrupted on restart, not automatically adopted or replayed. The suite
 checks expiry handling but does not wait two minutes to verify real wall-clock
 expiry end to end. Real-device Safari/accessibility audits and production load
 measurements remain outside the verified scope.
+
+## README video comparison
+
+This comparison uses the observed behavior supplied by the independent reviewer,
+not a claim of pixel or runtime parity with Linear.
+
+| Observed video behavior | Current implementation | Remaining dependency or gap |
+| --- | --- | --- |
+| Drag cards and update counts | Desktop native drag/drop calls shared `move`; counts update after persisted success | Touch uses stage selector; no optimistic movement |
+| Backlog/Todo/In Progress/Human Review/Merging/Done, Rework/Canceled/Duplicate | Nine persisted stages, available through UI/API/CLI | No automatic real merge or release verification |
+| Full-page task detail | Expand task toggles a full-width view with the existing shared task state | Original Symphony styling, not Linear parity |
+| Authored nested Plan, Acceptance Criteria, Validation in activity | Editable flat checklist, description and durable command activity | No rich authored activity document or nested sections |
+| GitHub PR and walkthrough | HTTPS links supplied by operator and labeled unverified | No automatic PR creation/status synchronization; no embedded media |
+| Replies and comments | Not implemented | Requires persisted authored comments, identity semantics and moderation/resource limits |
+| Agent workflow and merge completion | Fixed simulator moves its own task to Human Review; operators may move Merging/Done | Real agent/tracker/PR integration and verified merge transitions are not connected |
+
+A safe next increment would add bounded authored sections/comments to the shared
+service, snapshot schema, HTTP and CLI before the UI. Real PR synchronization
+then needs a repository mapping, authorized connector, webhook/poll ownership and
+reconciliation tests. Arbitrary media is currently linked rather than embedded;
+a future embed needs explicit provider handling and content/security controls.

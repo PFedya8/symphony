@@ -10,7 +10,8 @@ defmodule SymphonyElixirWeb.TasksLive do
 
     if byte_size(token) >= 32 and session["demo_auth"] == SymphonyElixirWeb.DemoAuth.digest(token) do
       if connected?(socket), do: Phoenix.PubSub.subscribe(SymphonyElixir.PubSub, "demo")
-      {:ok, socket |> assign(error: nil, approval: nil, task_id: "fixture-1", detail: false, project: nil) |> refresh()}
+      socket = assign(socket, error: nil, approval: nil, task_id: "fixture-1", detail: false, project: nil, expanded: false)
+      {:ok, refresh(socket)}
     else
       {:ok, redirect(socket, to: "/")}
     end
@@ -38,6 +39,29 @@ defmodule SymphonyElixirWeb.TasksLive do
 
   @impl true
   def handle_event("filter", %{"project" => project}, socket), do: {:noreply, push_patch(socket, to: board_path(normalize_project(project)))}
+
+  def handle_event("expand-detail", _, socket), do: {:noreply, assign(socket, expanded: not socket.assigns.expanded)}
+
+  def handle_event("board-move", params, socket) do
+    result =
+      Service.request(%{
+        "op" => "move",
+        "task_id" => params["task_id"],
+        "stage" => params["stage"],
+        "revision" => parse_step(params["revision"]),
+        "key" => Base.url_encode64(:crypto.strong_rand_bytes(18)),
+        "scope" => "control",
+        "actor" => "demo-operator"
+      })
+
+    error =
+      case result do
+        {:ok, _} -> nil
+        {:error, code} -> code
+      end
+
+    {:noreply, socket |> assign(error: error) |> refresh()}
+  end
 
   def handle_event("begin-draft", %{"form" => form} = params, socket) do
     {:noreply, put_draft(socket, form, Map.take(params, ["revision", "task_id"]))}
@@ -162,10 +186,10 @@ defmodule SymphonyElixirWeb.TasksLive do
           <button type="submit">Create task</button>
         <button :if={@drafts["create"]["active"]} type="button" phx-click="reload-draft" phx-value-form="create">Reload current data (discard draft)</button></form></details>
       </div>
-      <div class="board-columns" aria-label="Task workflow">
+      <div id="task-workflow" class="board-columns" aria-label="Task workflow" phx-hook="TaskBoard">
         <section :for={stage <- @payload["stages"]} class="board-column" data-stage={stage}>
           <h2><span class="stage-dot"></span>{stage}<small>{length(column_tasks(@payload, @project, stage))}</small></h2>
-          <.link :for={task <- column_tasks(@payload, @project, stage)} patch={board_path(@project, task["id"])} class="task-card" id={"card-" <> task["id"]}>
+          <.link :for={task <- column_tasks(@payload, @project, stage)} patch={board_path(@project, task["id"])} class="task-card" draggable="true" data-task-id={task["id"]} data-revision={task["revision"]} id={"card-" <> task["id"]}>
             <div class="card-meta"><span>{task["project"]}</span><span>{task["id"]}</span></div>
             <h3>{task["title"]}</h3><p>{task["description"]}</p>
             <div class="card-footer"><span>◇ Simulation</span><span :if={task["hold"]}>On hold</span><span>{Enum.count(task["plan"], & &1["completed"])}/{length(task["plan"])} checks</span></div>
@@ -173,9 +197,10 @@ defmodule SymphonyElixirWeb.TasksLive do
           <p :if={column_tasks(@payload, @project, stage) == []} class="empty-column">Nothing here yet</p>
         </section>
       </div>
-      <section :if={@detail} class="task-detail" aria-label="Task detail">
+      <section :if={@detail} class={["task-detail", @expanded && "full-page"]} aria-label="Task detail">
         <header><div><p class="board-eyebrow">{@payload["task"]["project"]} / {@task_id}</p><h2>{@payload["task"]["title"]}</h2></div><.link patch={board_path(@project)} class="close-detail" aria-label="Close task">✕</.link></header>
         <p :if={@error} role="alert" aria-live="assertive" data-error={@error} class="board-error">{error_message(@error)}</p>
+        <button type="button" phx-click="expand-detail" aria-expanded={to_string(@expanded)}>{if @expanded, do: "Use side panel", else: "Expand task"}</button>
         <div class="detail-meta"><span class="stage-tag">{@payload["task"]["stage"]}</span><span>Revision {@payload["task"]["revision"]} · hold: {to_string(@payload["task"]["hold"])}</span><span>Release unverified</span></div>
         <p>{@payload["task"]["description"]}</p>
         <form id="move-task" phx-submit="move" phx-change="draft" class="inline-form"><input type="hidden" name="_form" value="move" /><input type="hidden" name="revision" value={@drafts["move"]["revision"]} /><input type="hidden" name="task_id" value={@task_id} /><label>Board stage<select phx-focus="begin-draft" phx-value-form="move" phx-value-revision={@drafts["move"]["revision"]} phx-value-task_id={@task_id} name="stage"><option :for={stage <- @payload["stages"]} value={stage} selected={@drafts["move"]["stage"] == stage}>{stage}</option></select></label><button>Move task</button><button :if={@drafts["move"]["active"]} type="button" phx-click="reload-draft" phx-value-form="move">Reload current data (discard draft)</button></form>

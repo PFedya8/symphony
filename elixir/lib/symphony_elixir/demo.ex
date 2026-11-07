@@ -2,7 +2,7 @@ defmodule SymphonyElixir.Demo do
   @moduledoc "Manual fixture lifecycle, executed only inside the existing orchestrator. No shell or network tools."
   alias SymphonyElixir.Demo.Store
   @active ~w(starting running stopping)
-  @stages ["Backlog", "Todo", "In Progress", "Human Review", "Merging", "Done"]
+  @stages ["Backlog", "Todo", "In Progress", "Human Review", "Merging", "Done", "Rework", "Canceled", "Duplicate"]
 
   @spec open(keyword()) :: map()
   def open(opts) do
@@ -190,7 +190,7 @@ defmodule SymphonyElixir.Demo do
 
   defp eligible!(data) do
     require!(not data["task"]["hold"], "held")
-    require!(data["task"]["status"] == "opened" and data["task"]["stage"] != "Done", "task_ineligible")
+    require!(data["task"]["status"] == "opened" and data["task"]["stage"] not in ["Done", "Canceled", "Duplicate"], "task_ineligible")
     require!(data["task"]["dependencies"] == [], "dependencies_blocked")
     require!(not Enum.any?(data["runs"], &(&1["state"] in @active)), "capacity")
   end

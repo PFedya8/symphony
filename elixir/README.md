@@ -422,7 +422,8 @@ lets separate local instances use distinct ports; each also needs its own databa
 and token. The demo remains loopback-only and never runs real agents.
 
 The manual fixture now provides a multi-task board at `/tasks`, with stages from
-Backlog through Done, project filtering, detail panels, plans/checklists, activity
+Backlog through Done plus Rework/Canceled/Duplicate, revision-checked drag-and-drop,
+project filtering, expandable detail panels, plans/checklists, activity
 and HTTPS evidence links. `cli/symphonyctl tasks board --json` exposes the same
 state. `tasks create`, `move`, `plan`, `check` and `link` use the shared command
 handler with revision/idempotency checks. Tasks have separate attempt budgets;

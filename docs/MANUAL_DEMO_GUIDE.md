@@ -179,8 +179,11 @@ integration. OAuth consent and mutations require explicit authorization.
 
 This delivers the requested board/detail workflow, **not full parity with the
 Linear video**: there is no real agent plan stream, automatic PR creation/status
-sync, drag-and-drop, tracker import, multi-user permissions, or hosted mobile URL.
-Status transitions use the accessible detail-panel selector. Existing dependency
+sync, tracker import, multi-user permissions, or hosted mobile URL.
+Desktop cards can be dragged to another stage; the accessible detail-panel
+selector provides the keyboard/mobile alternative. Both use revision checks and
+reject changes while a task has an active run. Canceled and Duplicate, like Done,
+reject execution; Rework remains executable. Expand task opens a full-page detail. Existing dependency
 advisories and disabled endpoint origin checking still require review before any
 remote exposure. No production behavior or full two-minute expiry timing is claimed.
 

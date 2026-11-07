@@ -19,6 +19,13 @@ const path = require('node:path');
     await page.goto(new URL('/tasks',base).href);
     await page.locator('.phx-connected').waitFor();
     if (await page.locator('.task-card').count() !== 6) throw new Error('Fresh six-task database required');
+    await page.locator('#card-fixture-2').dragTo(page.locator('[data-stage="Rework"]'));
+    await page.locator('[data-stage="Rework"] #card-fixture-2').waitFor();
+    if(await page.locator('[data-stage="Rework"] small').innerText()!=='1')throw new Error('Drag count not updated');
+    await page.locator('[data-stage="Canceled"]').scrollIntoViewIfNeeded();
+    await page.locator('#card-fixture-2').dragTo(page.locator('[data-stage="Canceled"]'));
+    await page.locator('.board-columns').evaluate(el=>el.scrollTo(0,0));
+    await page.locator('[data-stage="Canceled"] #card-fixture-2').waitFor();
     await page.screenshot({path:path.join(out,'01-board-desktop.png'),fullPage:true});
     await page.getByLabel('Project',{exact:true}).first().selectOption('sandbox');
     await page.waitForFunction(()=>document.querySelectorAll('.task-card').length===1);
@@ -51,6 +58,8 @@ const path = require('node:path');
     await page.locator('.activity-event[open] pre').waitFor({state:'visible'});
     await page.locator('.activity-event summary').first().click();
     await page.locator('.task-detail').evaluate(el=>el.scrollTo(0,0));
+    await page.getByRole('button',{name:'Expand task',exact:true}).click();
+    await page.locator('.task-detail.full-page').waitFor();
     await page.screenshot({path:path.join(out,'02-task-desktop.png'),fullPage:true});
     // A separate mobile browser checks the persisted detail and project board.
     const mobile=await context.newPage();
@@ -76,7 +85,7 @@ const path = require('node:path');
     await mobile.getByRole('button',{name:'Move task',exact:true}).click();
     await mobile.locator('.stage-tag').filter({hasText:'Todo'}).waitFor();
     if (errors.length) throw new Error(JSON.stringify(errors));
-    console.log(JSON.stringify({passed:true,checks:['six-stage board','project filter','detail navigation','start/stop/hold/retry',
+    console.log(JSON.stringify({passed:true,checks:['nine-stage board','drag/drop and counts','expanded task detail','project filter','detail navigation','start/stop/hold/retry',
       'Human Review after simulated success','plan edit/check','linked unverified PR reference','activity disclosure',
       'mobile create/move','persisted cross-browser state','no browser runtime errors'],screenshots:out}));
   } finally {await browser.close();}
