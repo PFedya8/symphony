@@ -46,3 +46,14 @@ An opt-in simulated task slice adds a shared SQLite-backed command service,
 Phoenix task UI and thin `cli/symphonyctl` HTTP client. See
 [setup, scope and validation](docs/DEVOPS_SLICE_PROGRESS.md). Real tracker work and
 release verification remain separate from simulated run success.
+
+### Go manual fixture comparison
+
+The optional [Go fixture service](go-manual/README.md) implements the manual demo
+controls with a shared HTTP backend for its UI and the existing CLI. It includes
+[reproducible resource measurements](bench/GO_COMPARISON.md), browser evidence,
+and [project/integration boundaries](docs/GO_INTEGRATIONS.md). It is not a port of
+the complete Elixir orchestrator or its external tracker integrations.
+
+Both manual fixture backends retain effective stop/hold controls when ordinary
+command history reaches capacity, with durable idempotency and bounded safety records.

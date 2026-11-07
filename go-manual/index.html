@@ -1,0 +1,1254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Symphony · Go task board</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101116;
+        --panel: #191b22;
+        --line: #30323d;
+        --muted: #a0a4b5;
+        --ink: #f0f1f6;
+        --accent: #a6a0ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+      }
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      button,
+      summary,
+      select {
+        cursor: pointer;
+      }
+      button {
+        border: 1px solid var(--line);
+        background: #272934;
+        padding: 8px 13px;
+        border-radius: 7px;
+      }
+      button:hover,
+      summary:hover {
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: wait;
+      }
+      input,
+      textarea,
+      select {
+        background: #11131a;
+        border: 1px solid #454858;
+        border-radius: 6px;
+        padding: 9px;
+        width: 100%;
+      }
+      textarea {
+        min-height: 90px;
+        resize: vertical;
+      }
+      label {
+        display: block;
+        margin: 12px 0;
+        color: #cbd0df;
+      }
+      label > input,
+      label > textarea,
+      label > select {
+        display: block;
+        margin-top: 5px;
+      }
+      a {
+        color: var(--accent);
+      }
+      h1,
+      h2,
+      h3,
+      h4,
+      p {
+        margin: 0 0 12px;
+      }
+      h1 {
+        font-size: 30px;
+        letter-spacing: -1px;
+      }
+      h2 {
+        font-size: 21px;
+      }
+      h3 {
+        font-size: 16px;
+      }
+      small,
+      .muted {
+        color: var(--muted);
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.6 ui-monospace,
+          monospace;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: center;
+      }
+      .shell {
+        max-width: 1900px;
+        margin: auto;
+        padding: 28px;
+      }
+      .eyebrow {
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: var(--muted);
+        margin-bottom: 9px;
+      }
+      .pill {
+        font-size: 12px;
+        border: 1px solid #454259;
+        border-radius: 20px;
+        padding: 5px 10px;
+        color: #c3beff;
+        white-space: nowrap;
+      }
+      .notice {
+        margin: 18px 0;
+        padding: 12px 15px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #1b1c26;
+        color: #b9bdd0;
+      }
+      .auth {
+        max-width: 500px;
+        margin: 50px auto;
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+      }
+      #error:not(:empty) {
+        padding: 14px;
+        background: #432429;
+        border: 1px solid #92515c;
+        border-radius: 7px;
+        white-space: pre-wrap;
+      }
+      .toolbar {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        margin: 18px 0;
+        flex-wrap: wrap;
+      }
+      .toolbar label {
+        margin: 0;
+      }
+      .toolbar select {
+        width: auto;
+      }
+      .toolbar .new {
+        margin-left: auto;
+      }
+      .board {
+        display: flex;
+        gap: 14px;
+        overflow-x: auto;
+        padding: 4px 0 24px;
+        min-height: 360px;
+      }
+      .column {
+        flex: 0 0 270px;
+        background: #15171d;
+        border-radius: 10px;
+        padding: 12px;
+        border: 1px solid #242630;
+      }
+      .column h2 {
+        font-size: 13px;
+        display: flex;
+        gap: 9px;
+        align-items: center;
+        color: #d4d7e2;
+        margin-bottom: 17px;
+      }
+      .column h2:before {
+        content: "";
+        border: 2px solid #85839c;
+        border-radius: 50%;
+        width: 9px;
+        height: 9px;
+      }
+      .column[data-stage="In Progress"] h2:before {
+        border-color: #dfc06f;
+      }
+      .column[data-stage="Human Review"] h2:before {
+        border-color: #a397e9;
+      }
+      .column h2 small {
+        margin-left: auto;
+      }
+      .card {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: #20222c;
+        border: 1px solid #343642;
+        border-radius: 8px;
+        padding: 13px;
+        margin: 10px 0;
+        color: inherit;
+        text-decoration: none;
+        box-shadow: 0 3px 8px #0002;
+      }
+      .card:hover {
+        border-color: #77718e;
+        background: #262833;
+      }
+      .card h3 {
+        font-size: 14px;
+        margin: 10px 0 7px;
+      }
+      .card p {
+        font-size: 12px;
+        color: #a6abbc;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .card-meta,
+      .card-footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .card-meta span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .card-footer {
+        padding-top: 8px;
+        border-top: 1px solid #343642;
+      }
+      .empty {
+        font-size: 12px;
+        padding: 20px 8px;
+        color: #707587;
+      }
+      .detail {
+        position: fixed;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: min(720px, 100%);
+        overflow-y: auto;
+        background: #1a1c24;
+        border-left: 1px solid #484a59;
+        box-shadow: -20px 0 60px #0006;
+        z-index: 3;
+        padding: 28px;
+      }
+      .detail.expanded {
+        width: min(1100px, 100%);
+      }
+      .detail header {
+        align-items: flex-start;
+      }
+      .detail header h2 {
+        overflow-wrap: anywhere;
+      }
+      .detail .meta {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 15px 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .detail-section {
+        border-top: 1px solid var(--line);
+        padding-top: 22px;
+        margin-top: 24px;
+      }
+      .detail-section h3 small {
+        font-size: 11px;
+        font-weight: 400;
+        margin-left: 8px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .row {
+        padding: 12px;
+        background: #222530;
+        border: 1px solid #343847;
+        border-radius: 7px;
+        margin: 10px 0;
+        overflow-wrap: anywhere;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 10px 0;
+      }
+      .check button {
+        min-width: 35px;
+        padding: 5px;
+      }
+      .check.done span {
+        text-decoration: line-through;
+        color: var(--muted);
+      }
+      details {
+        margin: 14px 0;
+      }
+      summary {
+        color: #c4c1f4;
+        padding: 8px 0;
+      }
+      form button {
+        margin-right: 8px;
+        margin-top: 7px;
+      }
+      .stale {
+        color: #efc177;
+        background: #302a21;
+        padding: 10px;
+        border-radius: 6px;
+      }
+      .thread {
+        margin: 10px 0 10px 16px;
+        border-left: 2px solid #46445c;
+        padding-left: 12px;
+      }
+      .thread p,
+      .description {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .evidence {
+        display: block;
+        margin: 10px 0;
+        border: 1px solid var(--line);
+        padding: 12px;
+        border-radius: 7px;
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+      .evidence small {
+        display: block;
+      }
+      .activity {
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 9px;
+      }
+      .activity summary {
+        font-size: 12px;
+      }
+      .activity time {
+        color: var(--muted);
+        display: block;
+      }
+      .new-form {
+        max-width: 600px;
+        border: 1px solid var(--line);
+        padding: 16px;
+        border-radius: 8px;
+      }
+      iframe {
+        width: 100%;
+        aspect-ratio: 16/9;
+        border: 0;
+      }
+      .hidden {
+        display: none;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      .toolbar input {
+        width: 220px;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      summary:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      @media (max-width: 650px) {
+        .shell {
+          padding: 18px 12px;
+        }
+        h1 {
+          font-size: 25px;
+        }
+        header {
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+        .column {
+          flex-basis: 260px;
+        }
+        .detail {
+          padding: 20px 16px;
+        }
+        .toolbar {
+          gap: 10px;
+        }
+        .toolbar .new {
+          margin-left: 0;
+        }
+        .toolbar input {
+          width: 100%;
+        }
+        .auth {
+          margin: 25px 0;
+        }
+        .pill {
+          white-space: normal;
+        }
+        .detail header {
+          flex-wrap: nowrap;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <p class="eyebrow">SYMPHONY / GO WORKSPACE</p>
+          <h1>Task board</h1>
+          <p class="muted">From intent to review, with a visible trail.</p>
+        </div>
+        <span class="pill" id="mode">Shared API + CLI</span>
+      </header>
+      <div class="notice" id="notice">
+        Connect to your configured instance. Credentials stay in this page’s
+        memory.
+      </div>
+      <form id="login" class="auth">
+        <h2>Open your workspace</h2>
+        <label
+          >Instance token<input
+            id="token"
+            type="password"
+            autocomplete="off"
+            required
+            minlength="32" /></label
+        ><button>Connect</button>
+        <p class="muted">
+          Refresh disconnects. No token is stored in browser storage.
+        </p>
+      </form>
+      <p role="alert" aria-live="assertive" id="error"></p>
+      <main id="app"></main>
+    </div>
+    <script>
+      "use strict";
+      let token = "",
+        snapshot = null,
+        approval = null,
+        busy = false,
+        selected = null,
+        filter = "",
+        query = "",
+        expanded = false,
+        drag = null;
+      const drafts = new Map(),
+        opened = new Set(),
+        app = document.querySelector("#app"),
+        error = document.querySelector("#error");
+      const stagesDefault = [
+        "Backlog",
+        "Todo",
+        "In Progress",
+        "Human Review",
+        "Merging",
+        "Done",
+        "Rework",
+        "Canceled",
+        "Duplicate",
+      ];
+      function el(tag, text, parent = app, cls) {
+        const e = document.createElement(tag);
+        if (text != null) e.textContent = text;
+        if (cls) e.className = cls;
+        parent.append(e);
+        return e;
+      }
+      function btn(text, fn, parent, cls) {
+        const b = el("button", text, parent, cls);
+        b.type = "button";
+        b.disabled = busy;
+        b.onclick = fn;
+        return b;
+      }
+      function current() {
+        return snapshot?.task?.id === selected
+          ? snapshot.task
+          : snapshot?.tasks?.find((t) => t.id === selected) || snapshot?.task;
+      }
+      async function api(payload) {
+        const r = await fetch("/api/v1/control/commands", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        let data;
+        try {
+          data = await r.json();
+        } catch {
+          throw Error("Server returned an invalid response");
+        }
+        if (!r.ok) throw Error(data.error?.code || "Request failed");
+        return data;
+      }
+      async function refresh() {
+        const candidate = approval,
+          taskID = selected;
+        const next = await api({
+          op: "snapshot",
+          task_id: taskID,
+          approval: candidate?.id,
+        });
+        if (candidate !== approval || taskID !== selected) return;
+        const changed = JSON.stringify(snapshot) !== JSON.stringify(next);
+        snapshot = next;
+        if (!snapshot.approval_valid) approval = null;
+        if (changed) render();
+      }
+      function openTask(id) {
+        selected = id;
+        approval = null;
+        error.textContent = "";
+        location.hash = id ? encodeURIComponent(id) : "";
+        render();
+        refresh().catch(showError);
+      }
+      function showError(e) {
+        error.textContent = e.message;
+        const local = document.querySelector("#detail-error");
+        if (local) local.textContent = e.message;
+      }
+      function details(title, key, parent) {
+        const d = el("details", null, parent);
+        d.open = opened.has(key);
+        el("summary", title, d);
+        d.ontoggle = () => (d.open ? opened.add(key) : opened.delete(key));
+        return d;
+      }
+      function safeLink(url, title, parent, cls) {
+        try {
+          const u = new URL(url);
+          if (u.protocol !== "https:" || u.username || u.password)
+            return el("span", title + " (invalid link)", parent);
+          const a = el("a", title, parent, cls);
+          a.href = u.href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          return a;
+        } catch {
+          return el("span", title + " (invalid link)", parent);
+        }
+      }
+      function embedURL(url) {
+        try {
+          const u = new URL(url);
+          if (
+            u.protocol !== "https:" ||
+            u.username ||
+            u.password ||
+            (u.port && u.port !== "443")
+          )
+            return null;
+          let id;
+          if (["vimeo.com", "player.vimeo.com"].includes(u.hostname)) {
+            id = u.pathname.replace(/^\/video\//, "/").slice(1);
+            const h = u.searchParams.get("h");
+            if (/^\d{1,15}$/.test(id) && (!h || /^[a-zA-Z0-9]{1,64}$/.test(h)))
+              return (
+                "https://player.vimeo.com/video/" + id + (h ? "?h=" + h : "")
+              );
+          }
+          if (
+            ["youtube.com", "www.youtube.com", "youtu.be"].includes(u.hostname)
+          ) {
+            id =
+              u.hostname === "youtu.be"
+                ? u.pathname.slice(1)
+                : u.pathname === "/watch"
+                  ? u.searchParams.get("v")
+                  : null;
+            if (/^[a-zA-Z0-9_-]{11}$/.test(id || ""))
+              return "https://www.youtube-nocookie.com/embed/" + id;
+          }
+        } catch {}
+        return null;
+      }
+      function section(title, parent, note) {
+        const s = el("section", null, parent, "detail-section"),
+          h = el("h3", title, s);
+        if (note) el("small", note, h);
+        return s;
+      }
+      function tree(nodes, parent) {
+        const ul = el("ul", null, parent);
+        for (const n of nodes || []) {
+          const li = el("li", n.text, ul);
+          if (n.children?.length) tree(n.children, li);
+        }
+      }
+      function form(op, title, fields, parent, t = current()) {
+        const key = (t?.id || "board") + ":" + op;
+        let d = drafts.get(key);
+        if (!d) {
+          d = {
+            revision:
+              op === "create" ? snapshot.board_revision || 1 : t?.revision || 1,
+            task_id: t?.id,
+            values: {},
+            dirty: false,
+          };
+          for (const f of fields) d.values[f.name] = f.value ?? "";
+          drafts.set(key, d);
+        }
+        if (
+          !d.dirty &&
+          d.revision !==
+            (op === "create" ? snapshot.board_revision || 1 : t?.revision || 1)
+        ) {
+          drafts.delete(key);
+          return form(op, title, fields, parent, t);
+        }
+        const f = el("form", null, parent);
+        f.id = op + "-task";
+        f.dataset.draft = key;
+        if (
+          d.dirty &&
+          d.revision !==
+            (op === "create" ? snapshot.board_revision : t?.revision)
+        )
+          el(
+            "p",
+            "This task changed. Your draft still uses revision " +
+              d.revision +
+              ". Reload current data before editing, or submit to receive a conflict.",
+            f,
+            "stale",
+          );
+        for (const field of fields) {
+          const l = el("label", field.label, f);
+          let i;
+          if (field.options) {
+            i = el("select", null, l);
+            for (const option of field.options) {
+              const o = el(
+                "option",
+                typeof option === "string" ? option : option.label,
+                i,
+              );
+              o.value = typeof option === "string" ? option : option.value;
+            }
+          } else {
+            i = el(field.area ? "textarea" : "input", null, l);
+            if (!field.area) i.type = field.type || "text";
+            i.maxLength = field.max || 4000;
+          }
+          i.name = field.name;
+          i.id = op + "-" + field.name;
+          i.value = d.values[field.name];
+          i.required = field.required !== false;
+          i.oninput = () => {
+            d.values[field.name] = i.value;
+            d.dirty = true;
+          };
+          i.onchange = i.oninput;
+        }
+        const submit = el("button", title, f);
+        submit.disabled = busy;
+        btn(
+          "Reload current data (discard draft)",
+          () => {
+            drafts.delete(key);
+            render();
+          },
+          f,
+        );
+        f.onsubmit = async (e) => {
+          e.preventDefault();
+          const ok = await command(
+            op,
+            { ...d.values, task_id: d.task_id, revision: d.revision },
+            false,
+          );
+          if (ok) {
+            drafts.delete(key);
+            render();
+          }
+        };
+        return f;
+      }
+      async function command(op, extra = {}, needsRender = true) {
+        if (busy) return false;
+        busy = true;
+        render();
+        const t = current();
+        let ok = false;
+        try {
+          const result = await api({
+            op,
+            task_id: t?.id,
+            revision: t?.revision,
+            key: crypto.randomUUID(),
+            approval: approval?.id,
+            ...extra,
+          });
+          if (op === "preview") approval = result;
+          else if (["start", "retry", "hold", "release-hold"].includes(op))
+            approval = null;
+          error.textContent = "";
+          ok = true;
+          await refresh();
+          if (op === "create" && result.id) selected = result.id;
+        } catch (e) {
+          showError(e);
+        } finally {
+          busy = false;
+          render();
+        }
+        return ok;
+      }
+      function render() {
+        if (!snapshot) return;
+        const focus = document.activeElement,
+          focusID = focus?.id,
+          selection = focus?.selectionStart,
+          scroll = document.querySelector(".detail")?.scrollTop || 0;
+        app.replaceChildren();
+        document.querySelector("#login").classList.add("hidden");
+        const discovery = snapshot.mode === "gitlab_discovery";
+        document.querySelector("#mode").textContent = discovery
+          ? "● GitLab discovery · read only"
+          : "● Fixture workspace";
+        document.querySelector("#notice").textContent = discovery
+          ? "GitLab discovery is read only. Imported issues cannot start workers in Go. Local board edits do not change GitLab or verify a merge."
+          : "Simulated agents · manual dispatch · concurrency one. No live agent, PR creation or deployment is connected.";
+        if (snapshot.runtime_error)
+          el(
+            "p",
+            "Discovery unavailable: " +
+              snapshot.runtime_error +
+              ". Existing tasks remain local; Go cannot dispatch real workers.",
+            app,
+            "stale",
+          );
+        const tasks = snapshot.tasks || [snapshot.task],
+          stages = snapshot.stages || stagesDefault,
+          toolbar = el("div", null, app, "toolbar"),
+          label = el("label", "Project ", toolbar),
+          select = el("select", null, label);
+        select.setAttribute("aria-label", "Project");
+        for (const p of ["", ...new Set(tasks.map((t) => t.project))]) {
+          const o = el("option", p || "All projects", select);
+          o.value = p;
+        }
+        select.value = filter;
+        select.onchange = () => {
+          filter = select.value;
+          render();
+        };
+        const search = el("input", null, toolbar);
+        search.placeholder = "Search tasks";
+        search.setAttribute("aria-label", "Search tasks");
+        search.id = "search";
+        search.value = query;
+        search.oninput = () => {
+          query = search.value;
+          render();
+        };
+        el("small", tasks.length + " tasks · shared API + CLI", toolbar);
+        if (!discovery)
+          btn(
+            "New task",
+            () => {
+              opened.has("create")
+                ? opened.delete("create")
+                : opened.add("create");
+              render();
+            },
+            toolbar,
+            "new",
+          );
+        btn("Disconnect", () => location.reload(), toolbar);
+        if (!discovery && opened.has("create")) {
+          const nf = el("div", null, app, "new-form");
+          el("h3", "Create a local fixture task", nf);
+          form(
+            "create",
+            "Create task",
+            [
+              { name: "title", label: "Title", max: 160 },
+              {
+                name: "project",
+                label: "Project",
+                value: filter || snapshot.task?.project || "demo",
+                max: 80,
+              },
+              { name: "description", label: "Description", area: true },
+            ],
+            nf,
+            snapshot.task,
+          );
+        }
+        const board = el("div", null, app, "board");
+        board.id = "task-workflow";
+        board.setAttribute("aria-label", "Task workflow");
+        for (const stage of stages) {
+          const col = el("section", null, board, "column");
+          col.dataset.stage = stage;
+          const matches = tasks.filter(
+            (t) =>
+              (t.stage || "Todo") === stage &&
+              (!filter || t.project === filter) &&
+              (!query ||
+                (t.title + " " + t.id + " " + t.description)
+                  .toLowerCase()
+                  .includes(query.toLowerCase())),
+          );
+          const h = el("h2", stage, col);
+          el("small", matches.length, h);
+          col.ondragover = (e) => e.preventDefault();
+          col.ondrop = (e) => {
+            e.preventDefault();
+            if (drag)
+              command("move", {
+                task_id: drag.id,
+                revision: drag.revision,
+                stage,
+              });
+            drag = null;
+          };
+          for (const t of matches) {
+            const c = el("a", null, col, "card");
+            c.href = "#" + encodeURIComponent(t.id);
+            c.id = "card-" + t.id;
+            c.draggable = true;
+            c.onclick = (e) => {
+              e.preventDefault();
+              openTask(t.id);
+            };
+            c.ondragstart = () => {
+              drag = { id: t.id, revision: t.revision };
+            };
+            const meta = el("div", null, c, "card-meta");
+            el("span", t.project, meta);
+            el("span", t.id, meta);
+            el("h3", t.title, c);
+            el("p", t.description || "No description yet.", c);
+            const foot = el("div", null, c, "card-footer");
+            el(
+              "span",
+              t.execution_supported === false
+                ? "GitLab · read only"
+                : "◇ Simulation",
+              foot,
+            );
+            if (t.hold) el("span", "On hold", foot);
+            el(
+              "span",
+              (t.plan || []).filter((p) => p.completed).length +
+                "/" +
+                (t.plan || []).length +
+                " checks",
+              foot,
+            );
+          }
+          if (!matches.length) el("p", "Nothing here yet", col, "empty");
+        }
+        if (selected) {
+          const t = tasks.find((t) => t.id === selected);
+          if (t) renderDetail(t, stages);
+          else el("p", "Task not found. Select another card.", app);
+        }
+        if (focusID) {
+          const restored = document.getElementById(focusID);
+          if (restored) {
+            restored.focus({ preventScroll: true });
+            if (selection != null && restored.setSelectionRange)
+              try {
+                restored.setSelectionRange(selection, selection);
+              } catch {}
+          }
+        }
+        const panel = document.querySelector(".detail");
+        if (panel) panel.scrollTop = scroll;
+      }
+      function renderDetail(t, stages) {
+        if (snapshot.task?.id === t.id) t = snapshot.task;
+        const panel = el(
+          "section",
+          null,
+          app,
+          "detail" + (expanded ? " expanded" : ""),
+        );
+        panel.setAttribute("aria-label", "Task detail");
+        const head = el("header", null, panel),
+          titles = el("div", null, head);
+        el("p", t.project + " / " + t.id, titles, "eyebrow");
+        el("h2", t.title, titles);
+        btn("Close", () => openTask(null), head).setAttribute(
+          "aria-label",
+          "Close task",
+        );
+        const err = el("p", error.textContent, panel);
+        err.id = "detail-error";
+        err.setAttribute("role", "alert");
+        btn(
+          expanded ? "Use side panel" : "Expand task",
+          () => {
+            expanded = !expanded;
+            render();
+          },
+          panel,
+        );
+        const meta = el("div", null, panel, "meta");
+        el("span", t.stage || "Todo", meta, "pill");
+        el("span", "Revision " + t.revision + " · hold: " + t.hold, meta);
+        el("span", "Release unverified", meta);
+        el("p", t.description, panel, "description");
+        form(
+          "move",
+          "Move task",
+          [
+            {
+              name: "stage",
+              label: "Board stage",
+              options: stages,
+              value: t.stage || "Todo",
+            },
+          ],
+          panel,
+          t,
+        );
+        el(
+          "small",
+          "Moving a card updates this board. It does not execute, merge or deploy.",
+          panel,
+        );
+        let s = section("Plan & checklist", panel, "Manually maintained");
+        for (const [i, p] of (t.plan || []).entries()) {
+          const row = el(
+            "div",
+            null,
+            s,
+            "check" + (p.completed ? " done" : ""),
+          );
+          const b = btn(
+            p.completed ? "✓" : "○",
+            () => command("check", { step: i, completed: !p.completed }),
+            row,
+          );
+          b.setAttribute("aria-label", "Toggle " + p.text);
+          b.setAttribute("aria-pressed", String(p.completed));
+          el("span", p.text, row);
+        }
+        form(
+          "plan",
+          "Save plan",
+          [
+            {
+              name: "text",
+              label: "One step per line (up to 20)",
+              area: true,
+              value: (t.plan || []).map((p) => p.text).join("\n"),
+            },
+          ],
+          details("Edit plan", t.id + ":plan", s),
+          t,
+        );
+        s = section(
+          "Run controls",
+          panel,
+          t.execution_supported === false
+            ? "Execution unavailable"
+            : "Fixed simulator",
+        );
+        if (t.execution_supported === false)
+          el(
+            "p",
+            "Imported issue: Go has no real orchestrator execution path. Use the existing Elixir runtime for explicitly approved workers.",
+            s,
+            "muted",
+          );
+        const controls = el("div", null, s, "controls");
+        for (const op of t.allowed_actions || []) {
+          if (
+            t.execution_supported === false &&
+            ["preview", "start", "retry"].includes(op)
+          )
+            continue;
+          btn(op, () => command(op), controls);
+        }
+        if (t.tracker === "fixture" || !t.tracker)
+          btn("Sync fixture", () => command("sync"), controls);
+        const runs = (snapshot.runs || []).filter(
+          (r) => r.task_id === t.id || (!r.task_id && t.id === "fixture-1"),
+        );
+        if (approval && t.execution_supported !== false) {
+          el(
+            "p",
+            "Preview is held privately in this tab; expires after two minutes.",
+            s,
+            "notice",
+          );
+          if (!runs.length)
+            btn("Approve and start simulation", () => command("start"), s);
+        }
+        for (const r of runs) {
+          const row = el("article", null, s, "row");
+          el("strong", r.state + " · attempt " + r.attempt, row);
+          el("p", "Run " + r.id, row, "muted");
+          if (["starting", "running", "authorized"].includes(r.state))
+            btn("Stop and hold", () => command("stop", { run_id: r.id }), row);
+          else if (approval && r.state !== "stopping" && runs.length < 3)
+            btn(
+              "Approve new retry",
+              () => command("retry", { run_id: r.id }),
+              row,
+            );
+          if (r.evidence)
+            el(
+              "pre",
+              JSON.stringify(r.evidence, null, 2),
+              details("Simulation evidence", r.id, row),
+            );
+        }
+        if (!runs.length)
+          el(
+            "p",
+            "No runs. Preview and review the scope before approving an attempt.",
+            s,
+            "muted",
+          );
+        s = section("Authored plan & validation", panel);
+        el(
+          "p",
+          "Operator authored plain text. Use two-space indents for nested steps, up to three levels.",
+          s,
+          "muted",
+        );
+        const doc = t.documents?.at(-1);
+        for (const sec of doc?.sections || []) {
+          el("h4", sec.title, s);
+          tree(sec.nodes, s);
+        }
+        form(
+          "worklog",
+          "Publish update",
+          [
+            { name: "plan_text", label: "Plan", area: true },
+            {
+              name: "acceptance_text",
+              label: "Acceptance criteria",
+              area: true,
+            },
+            { name: "validation_text", label: "Validation", area: true },
+          ],
+          details("Publish authored update", t.id + ":worklog", s),
+          t,
+        );
+        s = section("Discussion", panel);
+        const comments = t.comments || [];
+        function thread(parent, container, depth = 0) {
+          if (depth > 2) return;
+          for (const c of comments.filter(
+            (c) => (c.parent_id || null) === parent,
+          )) {
+            const a = el("article", null, container, "thread");
+            el("small", (c.author || "operator") + " · " + (c.at || ""), a);
+            el("p", c.text, a);
+            thread(c.id, a, depth + 1);
+          }
+        }
+        thread(null, s);
+        form(
+          "comment",
+          "Post comment",
+          [
+            { name: "text", label: "Comment", area: true },
+            {
+              name: "parent_id",
+              label: "Reply to",
+              required: false,
+              options: [
+                { value: "", label: "New comment" },
+                ...comments
+                  .filter((c) => c.depth < 2)
+                  .map((c) => ({ value: c.id, label: c.text.slice(0, 70) })),
+              ],
+            },
+          ],
+          s,
+          t,
+        );
+        s = section("Imported agent & PR reports", panel);
+        el(
+          "p",
+          "Explicit CLI/API imports. No live sync or verified merge is implied.",
+          s,
+          "muted",
+        );
+        for (const r of t.reports || []) {
+          const a = el("article", null, s, "row");
+          el("strong", r.provider, a);
+          el("small", " · " + r.author + " · " + r.at, a);
+          el("p", r.reference, a);
+          if (r.url) safeLink(r.url, "Open source", a);
+          el("p", r.verification, a, "muted");
+          el("pre", r.text, a);
+        }
+        s = section("Pull requests & walkthroughs", panel);
+        if (!t.links?.length)
+          el(
+            "p",
+            "No linked evidence. No PR has been created by this fixture.",
+            s,
+            "muted",
+          );
+        for (const l of t.links || []) {
+          const a = safeLink(l.url, "↗ " + l.title, s, "evidence");
+          el("small", l.kind + " · " + l.verification, a);
+          const embed = l.kind === "walkthrough" && embedURL(l.url);
+          if (embed) {
+            el(
+              "small",
+              "Loading contacts the external video provider. This walkthrough remains unverified.",
+              s,
+            );
+            btn(
+              "Load walkthrough: " + l.title,
+              () => {
+                const frame = el("iframe", null, s);
+                frame.title = "User-supplied walkthrough";
+                frame.src = embed;
+                frame.referrerPolicy = "no-referrer";
+                frame.setAttribute(
+                  "sandbox",
+                  "allow-scripts allow-same-origin allow-presentation",
+                );
+                frame.allow = "fullscreen";
+                frame.allowFullscreen = true;
+              },
+              s,
+            );
+          }
+        }
+        form(
+          "link",
+          "Add link",
+          [
+            {
+              name: "kind",
+              label: "Type",
+              options: [
+                { value: "pull_request", label: "Pull request" },
+                { value: "walkthrough", label: "Walkthrough" },
+              ],
+              value: "pull_request",
+            },
+            { name: "title", label: "Title", max: 160 },
+            { name: "url", label: "HTTPS URL", type: "url", max: 2000 },
+          ],
+          details("Add an existing evidence link", t.id + ":links", s),
+          t,
+        );
+        s = section("Activity", panel, "Durable service events");
+        const events = (snapshot.events || []).filter(
+          (e) => e.task_id === t.id || (!e.task_id && t.id === "fixture-1"),
+        );
+        if (!events.length) el("p", "No activity yet.", s, "muted");
+        for (const e of [...events].reverse()) {
+          const d = details(
+            e.op + " · " + (e.actor || "system"),
+            t.id + ":event:" + e.cursor,
+            s,
+          );
+          d.className = "activity";
+          el("time", e.at, d);
+          if (e.op === "comment") el("p", e.result?.text, d);
+          else if (e.op === "worklog")
+            for (const sec of e.result?.sections || []) {
+              el("h4", sec.title, d);
+              tree(sec.nodes, d);
+            }
+          else el("pre", JSON.stringify(e, null, 2), d);
+        }
+      }
+      document.querySelector("#login").onsubmit = async (e) => {
+        e.preventDefault();
+        token = document.querySelector("#token").value;
+        document.querySelector("#token").value = "";
+        approval = null;
+        selected = location.hash
+          ? decodeURIComponent(location.hash.slice(1))
+          : null;
+        try {
+          await refresh();
+          error.textContent = "";
+        } catch (e) {
+          showError(e);
+        }
+      };
+      window.addEventListener("hashchange", () => {
+        const id = location.hash
+          ? decodeURIComponent(location.hash.slice(1))
+          : null;
+        if (id !== selected) {
+          selected = id;
+          approval = null;
+          render();
+          refresh().catch(showError);
+        }
+      });
+      setInterval(() => {
+        if (token && !busy) refresh().catch(showError);
+      }, 1000);
+    </script>
+  </body>
+</html>

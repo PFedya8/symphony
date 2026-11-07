@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Thin HTTP client. No task database or scheduling logic."""
 import argparse
+import hashlib
 import json
 import os
+import re
+import urllib.parse
 import sys
 import time
 import urllib.error
@@ -20,6 +23,107 @@ def request(path, payload=None):
         return json.load(response)
 
 
+def normalize_identifier(argv):
+    """Separate options from opaque IDs and bind option values before argparse."""
+    value_options = {'--approval', '--revision', '--key', '--reason', '--title', '--project', '--description', '--stage', '--step', '--completed', '--url', '--kind', '--text', '--plan-text', '--acceptance-text', '--validation-text', '--parent-id', '--file', '--source-url', '--issue'}
+    flags = {'--json', '--dry-run', '--follow', '-h', '--help'}
+    known = value_options | flags
+
+    def option_name(arg):
+        name = arg.split('=', 1)[0]
+        if name in known:
+            return name
+        # Preserve argparse's existing unambiguous long-option abbreviations.
+        matches = [option for option in known if option.startswith(name)] if name.startswith('--') else []
+        return matches[0] if len(matches) == 1 else None
+
+    options, positionals = [], []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == '--':
+            positionals.extend(argv[index + 1:])
+            break
+        option = option_name(arg)
+        if option in value_options:
+            if '=' in arg:
+                options.append(option + '=' + arg.split('=', 1)[1])
+            elif index + 1 < len(argv) and argv[index + 1] != '--' and option_name(argv[index + 1]) is None:
+                index += 1
+                options.append(option + '=' + argv[index])
+            else:
+                options.append(option)  # Let argparse report the missing value.
+        elif option in flags:
+            options.append(arg)
+        elif not arg.startswith('-') or len(positionals) == 2:
+            positionals.append(arg)
+        else:
+            options.append(arg)  # Unknown extra options remain errors.
+        index += 1
+    return options + ['--'] + positionals
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('Source redirect refused')
+
+
+def import_evidence(args):
+    if args.action == 'import-runtime':
+        base = urllib.parse.urlsplit(args.source_url or '')
+        if (base.scheme != 'http' or base.hostname not in ('127.0.0.1', '::1', 'localhost') or
+                base.username or base.password or base.path not in ('', '/') or base.query or base.fragment or not base.port):
+            raise ValueError('import-runtime requires --source-url http://127.0.0.1:PORT for an existing local runtime')
+        if not args.issue or len(args.issue) > 160:
+            raise ValueError('import-runtime requires --issue matching an existing runtime issue')
+        source_url = args.source_url.rstrip('/') + '/api/v1/' + urllib.parse.quote(args.issue, safe='')
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        with opener.open(source_url, timeout=10) as response:
+            raw = response.read(65537)
+        if len(raw) > 65536:
+            raise ValueError('Runtime response exceeds 64 KiB')
+        data = json.loads(raw)
+        if not isinstance(data, dict) or data.get('issue_identifier') != args.issue or data.get('status') not in ('running', 'retrying', 'blocked'):
+            raise ValueError('Unexpected runtime issue response')
+        running = data.get('running') or {}
+        if not isinstance(running, dict):
+            raise ValueError('Unexpected runtime running payload')
+        report = {'issue_identifier': args.issue, 'status': data['status'],
+                  'running': {key: running.get(key) for key in ('state', 'turn_count', 'last_event', 'last_event_at')}}
+        return {'op': 'evidence', 'provider': 'runtime_snapshot', 'reference': source_url, 'text': json.dumps(report, indent=2)}
+    if args.action == 'import-agent':
+        if not args.file:
+            raise ValueError('import-agent requires --file with reviewed JSON reference and summary')
+        with open(args.file, 'rb') as source:
+            raw = source.read(65537)
+        if len(raw) > 65536:
+            raise ValueError('Artifact exceeds 64 KiB')
+        data = json.loads(raw)
+        if not isinstance(data, dict) or not all(isinstance(data.get(k), str) for k in ('reference', 'summary')):
+            raise ValueError('Artifact requires string reference and summary')
+        return {'op': 'evidence', 'provider': 'agent_artifact', 'reference': data['reference'], 'text': data['summary']}
+    match = re.fullmatch(r'https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/([1-9][0-9]*)/?', args.url or '')
+    if not match or any(part in ('.', '..') for part in match.group(1, 2)):
+        raise ValueError('import-pr requires a canonical https://github.com/owner/repo/pull/number URL')
+    owner, repo, number = match.groups()
+    api_url = f'https://api.github.com/repos/{owner}/{repo}/pulls/{number}'
+    headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'symphonyctl', 'X-GitHub-Api-Version': '2022-11-28'}
+    token = os.environ.get('SYMPHONY_GITHUB_TOKEN')
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    with urllib.request.build_opener(NoRedirect()).open(urllib.request.Request(api_url, headers=headers), timeout=10) as response:
+        raw = response.read(1048577)
+    if len(raw) > 1048576:
+        raise ValueError('GitHub response exceeds 1 MiB')
+    data = json.loads(raw)
+    if not isinstance(data, dict) or data.get('number') != int(number):
+        raise ValueError('Unexpected GitHub PR response')
+    report = {'title': data.get('title'), 'state': data.get('state'), 'merged': data.get('merged'),
+              'draft': data.get('draft'), 'head_sha': (data.get('head') or {}).get('sha'),
+              'base_sha': (data.get('base') or {}).get('sha'), 'updated_at': data.get('updated_at')}
+    return {'op': 'evidence', 'provider': 'github_api', 'reference': api_url, 'url': f'https://github.com/{owner}/{repo}/pull/{number}', 'text': json.dumps(report, indent=2)}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('group', choices=['capabilities', 'sync', 'tasks', 'runs'])
@@ -32,29 +136,64 @@ def main():
     parser.add_argument('--key', default=str(uuid.uuid4()))
     parser.add_argument('--reason')
     parser.add_argument('--follow', action='store_true')
-    args = parser.parse_args()
+    for field in ['title', 'project', 'description', 'stage', 'url', 'kind', 'text', 'plan-text', 'acceptance-text', 'validation-text', 'parent-id', 'file', 'source-url', 'issue']:
+        parser.add_argument('--' + field)
+    parser.add_argument('--step', type=int)
+    parser.add_argument('--completed', choices=['true', 'false'])
+    args = parser.parse_args(normalize_identifier(sys.argv[1:]))
     if args.reason:
         parser.error('--reason text persistence is not supported by the fixed-output fixture demo')
     if args.group == 'capabilities':
         result = request('capabilities')
-    elif args.group == 'sync' or args.action in ['start', 'hold', 'release-hold', 'stop', 'retry', 'resume']:
+    elif args.group == 'tasks' and args.action == 'board':
+        result = request('snapshot')
+    elif args.group == 'sync' or args.action in ['start', 'hold', 'release-hold', 'stop', 'retry', 'resume', 'create', 'move', 'check', 'link', 'plan', 'worklog', 'comment', 'import-agent', 'import-pr', 'import-runtime']:
         if args.revision is None:
             parser.error('mutations require --revision from tasks show')
         op = 'sync' if args.group == 'sync' else args.action
         if args.dry_run:
             op = 'preview'
-        result = request('commands', {'op': op, 'revision': args.revision,
+        payload = {'op': op, 'revision': args.revision,
             'key': args.key, 'approval': args.approval,
             'task_id': args.id if args.group == 'tasks' else None,
-            'run_id': args.id if args.group == 'runs' else None})
+            'run_id': args.id if args.group == 'runs' else None}
+        for field in ['title', 'project', 'description', 'stage', 'step', 'url', 'kind', 'text', 'plan_text', 'acceptance_text', 'validation_text', 'parent_id']:
+            value = getattr(args, field)
+            if value is not None:
+                payload[field] = value
+        if args.completed is not None:
+            payload['completed'] = args.completed == 'true'
+        if args.action in ('import-agent', 'import-pr', 'import-runtime'):
+            if args.dry_run:
+                parser.error('imports do not support --dry-run; inspect the source before importing')
+            if args.group != 'tasks' or not args.id:
+                parser.error('imports require an explicit tasks ID')
+            source = {'action': args.action, 'url': args.url, 'source_url': args.source_url, 'issue': args.issue,
+                      'file': os.path.abspath(args.file) if args.file else None}
+            payload['import_intent'] = hashlib.sha256(json.dumps(source, sort_keys=True).encode()).hexdigest()
+            lookup = {**payload, 'op': 'import-receipt'}
+            receipt = request('commands', lookup)
+            if receipt.get('found'):
+                result = receipt['result']
+            else:
+                payload.update(import_evidence(args))
+                result = request('commands', payload)
+        else:
+            result = request('commands', payload)
     elif args.action in ['list', 'show', 'history', 'logs']:
         cursor = 0
         while True:
             snapshot = request('snapshot')
             if args.group == 'tasks':
-                if args.id and args.id != snapshot['task']['id']:
+                tasks = [task for task in snapshot.get('tasks', [snapshot['task']])
+                         if (not args.id or task['id'] == args.id) and
+                         (not args.project or task['project'] == args.project)]
+                if args.id and not tasks:
                     raise ValueError('not_found')
-                result = snapshot['events'] if args.action == 'history' else snapshot['task']
+                result = tasks[0] if args.id else tasks
+                if args.action == 'history':
+                    result = [event for event in snapshot['events']
+                              if not args.id or event.get('task_id', 'fixture-1') == args.id]
             else:
                 runs = [r for r in snapshot['runs'] if not args.id or r['id'] == args.id]
                 if args.id and not runs:
@@ -74,7 +213,7 @@ def main():
     if not args.json and args.action == 'list' and args.group in ('tasks', 'runs'):
         rows = result if isinstance(result, list) else [result]
         for row in rows:
-            print(f"{row['id']}\t{row.get('state', row.get('status', 'unknown'))}\t{row.get('title', '')}")
+            print(f"{row['id']}\t{row.get('state', row.get('stage', row.get('status', 'unknown')))}\t{row.get('title', '')}")
     else:
         print(json.dumps(result, indent=2 if not args.json else None))
 

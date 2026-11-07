@@ -2318,3 +2318,10 @@ poll-driven dispatch and automatic continuation with explicit approved commands.
 It stores fixture execution records durably, reconciles unknown active records as
 interrupted, and never infers tracker completion from run success. This extension
 is disabled by default and does not change the core tracker-mode lifecycle.
+
+Manual fixture command capacity must not disable effective hold or active-run
+stop. After 1,000 accepted commands, only these monotone safety transitions may
+add records (at most two additional entries). Existing idempotency results must
+remain replayable; new no-op commands, release and dispatch remain blocked.
+Safety actions preserve scope/revision checks, durable commit-before-effect, and
+the existing bounded audit-history policy.

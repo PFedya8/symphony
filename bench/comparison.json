@@ -1,0 +1,344 @@
+{
+  "host": {
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.36",
+    "logical_cpus": 5,
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C"
+  },
+  "runtime_limits": {
+    "GOMAXPROCS": 2,
+    "ERL_FLAGS": "+S 2:2"
+  },
+  "method": "Sequential alternating order, fresh SQLite per trial, warmed builds; 50ms pacing for synthetic HTTP phases. Process-tree CPU and sampled RSS from /proc. No browser or real agent. CLI CPU from child resource usage; RSS sampled every ~1ms (short-lived peaks may be missed).",
+  "results": [
+    {
+      "implementation": "go",
+      "trial": 1,
+      "startup_seconds": 0.05537551099996563,
+      "idle": {
+        "seconds": 5.02850559400008,
+        "cpu_seconds": 0,
+        "cpu_one_core_percent": 0.0,
+        "rss_kib_median": 8696.0,
+        "rss_kib_peak": 8696.0,
+        "operations": 0,
+        "latency_ms_median": null,
+        "process_count": 1
+      },
+      "simulated_active_with_polling": {
+        "seconds": 2.0213578699999744,
+        "cpu_seconds": 0.03,
+        "cpu_one_core_percent": 1.4841508495475064,
+        "rss_kib_median": 9720.0,
+        "rss_kib_peak": 9976.0,
+        "operations": 39,
+        "latency_ms_median": 1.2157869999782633,
+        "process_count": 1
+      },
+      "ui_api_polling": {
+        "seconds": 3.043247580999946,
+        "cpu_seconds": 0.1,
+        "cpu_one_core_percent": 3.285963344695805,
+        "rss_kib_median": 11640.0,
+        "rss_kib_peak": 12920.0,
+        "operations": 58,
+        "latency_ms_median": 1.3012604999858013,
+        "process_count": 1
+      },
+      "durable_sync_writes": {
+        "seconds": 3.030794981999975,
+        "cpu_seconds": 0.18999999999999997,
+        "cpu_one_core_percent": 6.268982267966601,
+        "rss_kib_median": 14072.0,
+        "rss_kib_peak": 14584.0,
+        "operations": 53,
+        "latency_ms_median": 5.383587999972406,
+        "process_count": 1
+      },
+      "cli": {
+        "wall_seconds": 0.1115441340000416,
+        "cpu_seconds": 0.107985,
+        "sampled_peak_rss_kib": 19820.0
+      },
+      "external_agent": {
+        "processes": 0,
+        "cpu_seconds": 0,
+        "note": "No external agent; timer/OTP task is inside coordinator process."
+      }
+    },
+    {
+      "implementation": "elixir",
+      "trial": 1,
+      "startup_seconds": 0.9678873460001114,
+      "idle": {
+        "seconds": 5.088611392999951,
+        "cpu_seconds": 0.040000000000000036,
+        "cpu_one_core_percent": 0.786069065030693,
+        "rss_kib_median": 91008.0,
+        "rss_kib_peak": 94708.0,
+        "operations": 0,
+        "latency_ms_median": null,
+        "process_count": 2
+      },
+      "simulated_active_with_polling": {
+        "seconds": 2.0210379670000975,
+        "cpu_seconds": 0.050000000000000044,
+        "cpu_one_core_percent": 2.473976284286085,
+        "rss_kib_median": 90392.0,
+        "rss_kib_peak": 90392.0,
+        "operations": 39,
+        "latency_ms_median": 1.359119999960967,
+        "process_count": 2
+      },
+      "ui_api_polling": {
+        "seconds": 3.011843520999946,
+        "cpu_seconds": 0.08000000000000007,
+        "cpu_one_core_percent": 2.656180490194912,
+        "rss_kib_median": 90392.0,
+        "rss_kib_peak": 90392.0,
+        "operations": 58,
+        "latency_ms_median": 1.4564479999421565,
+        "process_count": 2
+      },
+      "durable_sync_writes": {
+        "seconds": 3.0410323659999676,
+        "cpu_seconds": 0.19999999999999996,
+        "cpu_one_core_percent": 6.57671395530297,
+        "rss_kib_median": 91288.0,
+        "rss_kib_peak": 92552.0,
+        "operations": 55,
+        "latency_ms_median": 4.643555000029664,
+        "process_count": 2
+      },
+      "cli": {
+        "wall_seconds": 0.07154816600007052,
+        "cpu_seconds": 0.06973099999999993,
+        "sampled_peak_rss_kib": 19800.0
+      },
+      "external_agent": {
+        "processes": 0,
+        "cpu_seconds": 0,
+        "note": "No external agent; timer/OTP task is inside coordinator process."
+      }
+    },
+    {
+      "implementation": "elixir",
+      "trial": 2,
+      "startup_seconds": 0.8380487890000268,
+      "idle": {
+        "seconds": 5.032588612999916,
+        "cpu_seconds": 0.010000000000000009,
+        "cpu_one_core_percent": 0.19870489660467258,
+        "rss_kib_median": 92808.0,
+        "rss_kib_peak": 95044.0,
+        "operations": 0,
+        "latency_ms_median": null,
+        "process_count": 2
+      },
+      "simulated_active_with_polling": {
+        "seconds": 2.0190615090000392,
+        "cpu_seconds": 0.05999999999999983,
+        "cpu_one_core_percent": 2.9716776696771086,
+        "rss_kib_median": 92980.0,
+        "rss_kib_peak": 93208.0,
+        "operations": 39,
+        "latency_ms_median": 1.4175730000260955,
+        "process_count": 2
+      },
+      "ui_api_polling": {
+        "seconds": 3.0214701599999216,
+        "cpu_seconds": 0.08000000000000007,
+        "cpu_one_core_percent": 2.647717692502452,
+        "rss_kib_median": 92980.0,
+        "rss_kib_peak": 92980.0,
+        "operations": 57,
+        "latency_ms_median": 1.422319999960564,
+        "process_count": 2
+      },
+      "durable_sync_writes": {
+        "seconds": 3.0519840799998974,
+        "cpu_seconds": 0.19999999999999996,
+        "cpu_one_core_percent": 6.553114130267898,
+        "rss_kib_median": 93108.0,
+        "rss_kib_peak": 93620.0,
+        "operations": 55,
+        "latency_ms_median": 4.62842600006752,
+        "process_count": 2
+      },
+      "cli": {
+        "wall_seconds": 0.06797470800006522,
+        "cpu_seconds": 0.06576300000000002,
+        "sampled_peak_rss_kib": 19976.0
+      },
+      "external_agent": {
+        "processes": 0,
+        "cpu_seconds": 0,
+        "note": "No external agent; timer/OTP task is inside coordinator process."
+      }
+    },
+    {
+      "implementation": "go",
+      "trial": 2,
+      "startup_seconds": 0.05193035000002055,
+      "idle": {
+        "seconds": 5.037936780999985,
+        "cpu_seconds": 0,
+        "cpu_one_core_percent": 0.0,
+        "rss_kib_median": 8892.0,
+        "rss_kib_peak": 8892.0,
+        "operations": 0,
+        "latency_ms_median": null,
+        "process_count": 1
+      },
+      "simulated_active_with_polling": {
+        "seconds": 2.0038130269999783,
+        "cpu_seconds": 0.03,
+        "cpu_one_core_percent": 1.4971456715657097,
+        "rss_kib_median": 9660.0,
+        "rss_kib_peak": 10300.0,
+        "operations": 39,
+        "latency_ms_median": 0.9088269999892873,
+        "process_count": 1
+      },
+      "ui_api_polling": {
+        "seconds": 3.008634026999971,
+        "cpu_seconds": 0.04,
+        "cpu_one_core_percent": 1.3295070002211467,
+        "rss_kib_median": 11900.0,
+        "rss_kib_peak": 13248.0,
+        "operations": 58,
+        "latency_ms_median": 0.9237014999712301,
+        "process_count": 1
+      },
+      "durable_sync_writes": {
+        "seconds": 3.0059958510000797,
+        "cpu_seconds": 0.16999999999999998,
+        "cpu_one_core_percent": 5.65536376051357,
+        "rss_kib_median": 14528.0,
+        "rss_kib_peak": 14656.0,
+        "operations": 54,
+        "latency_ms_median": 4.779868500008888,
+        "process_count": 1
+      },
+      "cli": {
+        "wall_seconds": 0.0678935429999683,
+        "cpu_seconds": 0.06224400000000008,
+        "sampled_peak_rss_kib": 19856.0
+      },
+      "external_agent": {
+        "processes": 0,
+        "cpu_seconds": 0,
+        "note": "No external agent; timer/OTP task is inside coordinator process."
+      }
+    },
+    {
+      "implementation": "go",
+      "trial": 3,
+      "startup_seconds": 0.05199713600006817,
+      "idle": {
+        "seconds": 5.02505707499995,
+        "cpu_seconds": 0,
+        "cpu_one_core_percent": 0.0,
+        "rss_kib_median": 8736.0,
+        "rss_kib_peak": 8736.0,
+        "operations": 0,
+        "latency_ms_median": null,
+        "process_count": 1
+      },
+      "simulated_active_with_polling": {
+        "seconds": 2.0150030499999048,
+        "cpu_seconds": 0.03,
+        "cpu_one_core_percent": 1.4888314933320532,
+        "rss_kib_median": 9504.0,
+        "rss_kib_peak": 10144.0,
+        "operations": 39,
+        "latency_ms_median": 0.8759460000646868,
+        "process_count": 1
+      },
+      "ui_api_polling": {
+        "seconds": 3.036559470000043,
+        "cpu_seconds": 0.049999999999999996,
+        "cpu_one_core_percent": 1.6466003875102533,
+        "rss_kib_median": 11680.0,
+        "rss_kib_peak": 13088.0,
+        "operations": 59,
+        "latency_ms_median": 0.936656000021685,
+        "process_count": 1
+      },
+      "durable_sync_writes": {
+        "seconds": 3.0543121190000875,
+        "cpu_seconds": 0.16,
+        "cpu_one_core_percent": 5.238495404732257,
+        "rss_kib_median": 13728.0,
+        "rss_kib_peak": 14624.0,
+        "operations": 55,
+        "latency_ms_median": 4.813670999965325,
+        "process_count": 1
+      },
+      "cli": {
+        "wall_seconds": 0.06816461800008256,
+        "cpu_seconds": 0.06497699999999984,
+        "sampled_peak_rss_kib": 19852.0
+      },
+      "external_agent": {
+        "processes": 0,
+        "cpu_seconds": 0,
+        "note": "No external agent; timer/OTP task is inside coordinator process."
+      }
+    },
+    {
+      "implementation": "elixir",
+      "trial": 3,
+      "startup_seconds": 0.9052897209999173,
+      "idle": {
+        "seconds": 5.028389778000019,
+        "cpu_seconds": 0.030000000000000027,
+        "cpu_one_core_percent": 0.5966124609363948,
+        "rss_kib_median": 95080.0,
+        "rss_kib_peak": 98932.0,
+        "operations": 0,
+        "latency_ms_median": null,
+        "process_count": 2
+      },
+      "simulated_active_with_polling": {
+        "seconds": 2.0274035840000124,
+        "cpu_seconds": 0.06000000000000005,
+        "cpu_one_core_percent": 2.9594502285342554,
+        "rss_kib_median": 92388.0,
+        "rss_kib_peak": 93072.0,
+        "operations": 39,
+        "latency_ms_median": 1.4132159999462601,
+        "process_count": 2
+      },
+      "ui_api_polling": {
+        "seconds": 3.0053479389999893,
+        "cpu_seconds": 0.07000000000000006,
+        "cpu_one_core_percent": 2.3291812269594354,
+        "rss_kib_median": 92772.0,
+        "rss_kib_peak": 92900.0,
+        "operations": 58,
+        "latency_ms_median": 1.3372970000204987,
+        "process_count": 2
+      },
+      "durable_sync_writes": {
+        "seconds": 3.0460088639999867,
+        "cpu_seconds": 0.21999999999999997,
+        "cpu_one_core_percent": 7.222565981344463,
+        "rss_kib_median": 93412.0,
+        "rss_kib_peak": 95204.0,
+        "operations": 55,
+        "latency_ms_median": 4.800821999992877,
+        "process_count": 2
+      },
+      "cli": {
+        "wall_seconds": 0.06998790399995869,
+        "cpu_seconds": 0.0682630000000004,
+        "sampled_peak_rss_kib": 19740.0
+      },
+      "external_agent": {
+        "processes": 0,
+        "cpu_seconds": 0,
+        "note": "No external agent; timer/OTP task is inside coordinator process."
+      }
+    }
+  ]
+}
